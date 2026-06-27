@@ -1,98 +1,162 @@
 ﻿using System;
-using System.Diagnostics;
-using System.Runtime.InteropServices;
+using System.Collections.Generic;
 using Veldrid;
-using Veldrid.Sdl2;
-using Veldrid.StartupUtilities;
+using CyberEngine;
+using CyberEngine.Entities;
 
-// ====================================================================
-// 🕹️ PANEL STEROWANIA BENCHMARKIEM
-// Zmieniaj tę wartość, uruchamiaj projekt i zapisuj wyniki FPS!
-// Opcje dla RPi4: GraphicsBackend.Vulkan LUB GraphicsBackend.OpenGLES
-// Opcje dla PC: GraphicsBackend.Vulkan LUB GraphicsBackend.Direct3D11 LUB Direct3D12
-// ====================================================================
-GraphicsBackend wybraneAPI = GraphicsBackend.Vulkan; 
+Console.WriteLine("[CyberEngine] Uruchamianie silnika w trybie 3D...");
 
-// Liczba wymuszonych operacji na klatkę (zwiększaj, aż FPS zacznie drastycznie spadać!)
-int liczbaZadanDlaSterownika = 500000; 
+GraphicsBackend api = GraphicsBackend.OpenGL; 
+float cellSize = 2.0f; 
+int chunkSize = 15; 
 
-Console.WriteLine($"[CyberBenchmark] Uruchamianie testu dla API: {wybraneAPI}...");
+HashSet<Key> trzymaneKlawisze = new HashSet<Key>();
+Dictionary<(int x, int z), List<Wall>> zaladowaneChunki = new Dictionary<(int, int), List<Wall>>();
 
-WindowCreateInfo windowCI = new WindowCreateInfo
+GameEngine engine = new GameEngine();
+engine.Initialize("CyberEngine 3D v1.0", 1280, 720, api);
+
+Player player = new Player();
+player.Transform.Position = new Core.Math.Vector3(cellSize * 7, 0f, cellSize * 7);
+engine.GameObjects.Add(player);
+
+void AktualizujLogikeGry(double deltaTime, InputSnapshot snapshot)
 {
-    X = 100, Y = 100,
-    WindowWidth = 960, WindowHeight = 540,
-    WindowTitle = $"CyberBenchmark - {wybraneAPI}"
-};
-
-Sdl2Window window = VeldridStartup.CreateWindow(ref windowCI);
-
-GraphicsDeviceOptions option = new GraphicsDeviceOptions
-{
-    Debug = false,
-    HasMainSwapchain = true,
-    SyncToVerticalBlank = false // V-Sync MUSI być wyłączony do benchmarku!
-};
-
-// Inicjalizujemy urządzenie dokładnie z wybranym przez nas API
-GraphicsDevice device = VeldridStartup.CreateGraphicsDevice(window, option, wybraneAPI);
-Console.WriteLine($"[CyberBenchmark] Urządzenie graficzne zainicjalizowane pomyślnie!");
-
-Stopwatch stopwatch = Stopwatch.StartNew();
-double lastTime = 0;
-int frameCount = 0;
-double fpsTimer = 0;
-
-while (window.Exists)
-{
-    double currentTime = stopwatch.Elapsed.TotalSeconds;
-    double deltaTime = currentTime - lastTime;
-    lastTime = currentTime;
-
-    InputSnapshot snapshot = window.PumpEvents();
-    if (!window.Exists) break;
-
-    // Licznik FPS
-    frameCount++;
-    fpsTimer += deltaTime;
-    if (fpsTimer >= 1.0)
+    foreach (KeyEvent keyEvent in snapshot.KeyEvents)
     {
-        window.Title = $"[BENCHMARK] API: {device.BackendType} | Obiektów/Klatkę: {liczbaZadanDlaSterownika} | FPS: {frameCount}";
-        frameCount = 0;
-        fpsTimer = 0;
+        if (keyEvent.Down) trzymaneKlawisze.Add(keyEvent.Key);
+        else trzymaneKlawisze.Remove(keyEvent.Key);
     }
 
-    // Dynamiczna zmiana koloru bazowego
-    float pulse = (float)Math.Sin(currentTime * 3.0) * 0.5f + 0.5f;
-    RgbaFloat baseColor = new RgbaFloat(pulse * 0.1f, pulse * 0.4f, pulse * 0.2f, 1.0f);
+    Core.Math.Vector3 kierunekRuchu = Core.Math.Vector3.Zero;
+    if (trzymaneKlawisze.Contains(Key.W)) kierunekRuchu.Z = -1f; // Do przodu (w głąb ekranu)
+    if (trzymaneKlawisze.Contains(Key.S)) kierunekRuchu.Z = 1f;  // Do tyłu
+    if (trzymaneKlawisze.Contains(Key.A)) kierunekRuchu.X = -1f; // W lewo
+    if (trzymaneKlawisze.Contains(Key.D)) kierunekRuchu.X = 1f;  // W prawo
 
-    // --- START RENDEROWANIA I STRESS-TESTU ---
-    CommandList cl = device.ResourceFactory.CreateCommandList();
-    cl.Begin();
-    cl.SetFramebuffer(device.MainSwapchain.Framebuffer);
-    cl.ClearColorTarget(0, baseColor);
+    if (kierunekRuchu.Length() > 0)
+        player.Velocity = kierunekRuchu.Normalize() * player.Speed;
+    else
+        player.Velocity = Core.Math.Vector3.Zero;
 
-    // 🔥 BRUTALNY TEST API OVERHEAD
-    // Bombardujemy sterownik tysiącami instrukcji zmiany okna przycinania (Scissor)
-    // Starsze API (OpenGL) zaczną tutaj potężnie obciążać jeden wątek procesora.
-    // Nowoczesne API (Vulkan) powinny przetworzyć tę pętlę znacznie sprawniej.
-    uint w = (uint)window.Width;
-    uint h = (uint)window.Height;
-    for (uint i = 0; i < liczbaZadanDlaSterownika; i++)
+    player.Transform.Position += player.Velocity * (float)deltaTime;
+
+    // Aktualizujemy pozycję kamery (silnik automatycznie podwiesi ją nad graczem w 3D)
+    engine.CameraPosition = player.Transform.Position;
+
+    // NIESKOŃCZONY STREAMER CHUNKÓW
+    float chunkWorldSize = chunkSize * cellSize;
+    int currentChunkX = (int)MathF.Floor(player.Transform.Position.X / chunkWorldSize);
+    int currentChunkZ = (int)MathF.Floor(player.Transform.Position.Z / chunkWorldSize);
+
+    HashSet<(int x, int z)> wymaganeChunki = new HashSet<(int, int)>();
+    for (int cx = -1; cx <= 1; cx++)
+        for (int cz = -1; cz <= 1; cz++)
+            wymaganeChunki.Add((currentChunkX + cx, currentChunkZ + cz));
+
+    List<(int x, int z)> doWyladowania = new List<(int, int)>();
+    foreach (var coord in zaladowaneChunki.Keys)
+        if (!wymaganeChunki.Contains(coord)) doWyladowania.Add(coord);
+
+    foreach (var coord in doWyladowania)
     {
-        // Generujemy pseudo-losowe, zmienne w czasie prostokąty
-        uint offset = i % 20;
-        cl.SetScissorRect(0, offset, offset, w - (offset * 2), h - (offset * 2));
+        foreach (var wall in zaladowaneChunki[coord]) engine.GameObjects.Remove(wall);
+        zaladowaneChunki.Remove(coord);
     }
 
-    cl.End();
-    
-    // Wysyłamy gigantyczną paczkę rozkazów do GPU
-    device.SubmitCommands(cl);
-    device.SwapBuffers(device.MainSwapchain);
-    
-    cl.Dispose();
+    foreach (var coord in wymaganeChunki)
+    {
+        if (!zaladowaneChunki.ContainsKey(coord))
+        {
+            List<Wall> scianyChunku = new List<Wall>();
+            bool[,] grid = GenerujSektorMatematyczny(coord.x, coord.z, chunkSize);
+
+            for (int x = 0; x < chunkSize; x++)
+            {
+                for (int z = 0; z < chunkSize; z++)
+                {
+                    if (grid[x, z])
+                    {
+                        float worldX = (coord.x * chunkSize + x) * cellSize;
+                        float worldZ = (coord.z * chunkSize + z) * cellSize;
+                        Wall w = new Wall(worldX, worldZ, cellSize);
+                        scianyChunku.Add(w);
+                        engine.GameObjects.Add(w);
+                    }
+                }
+            }
+            zaladowaneChunki[coord] = scianyChunku;
+        }
+    }
+
+    // SYSTEM REAKCJI NA KOLIZJE
+    for (int i = 0; i < engine.GameObjects.Count; i++)
+    {
+        var obj = engine.GameObjects[i];
+        if (obj is Wall wall)
+        {
+            float dx = player.Transform.Position.X - wall.Transform.Position.X;
+            float dz = player.Transform.Position.Z - wall.Transform.Position.Z;
+            float odleglosc = MathF.Sqrt(dx * dx + dz * dz);
+            float wymaganyDystans = player.Radius + wall.Radius;
+
+            if (odleglosc < wymaganyDystans && odleglosc > 0.001f)
+            {
+                float overlap = wymaganyDystans - odleglosc;
+                player.Transform.Position += new Core.Math.Vector3(
+                    (dx / odleglosc) * overlap,
+                    0f,
+                    (dz / odleglosc) * overlap
+                );
+            }
+        }
+    }
 }
 
-device.Dispose();
-Console.WriteLine("[CyberBenchmark] Test zakończony.");
+bool[,] GenerujSektorMatematyczny(int cx, int cz, int size)
+{
+    bool[,] grid = new bool[size, size];
+    for (int x = 0; x < size; x++)
+        for (int z = 0; z < size; z++)
+            grid[x, z] = true;
+
+    int seed = (cx * 73856093) ^ (cz * 83492791);
+    Random rng = new Random(seed);
+
+    Stack<(int x, int z)> stack = new Stack<(int, int)>();
+    grid[1, 1] = false;
+    stack.Push((1, 1));
+
+    while (stack.Count > 0)
+    {
+        var curr = stack.Peek();
+        List<(int x, int z)> neighbors = new List<(int, int)>();
+
+        if (curr.x - 2 > 0 && grid[curr.x - 2, curr.z]) neighbors.Add((curr.x - 2, curr.z));
+        if (curr.x + 2 < size - 1 && grid[curr.x + 2, curr.z]) neighbors.Add((curr.x + 2, curr.z));
+        if (curr.z - 2 > 0 && grid[curr.x, curr.z - 2]) neighbors.Add((curr.x, curr.z - 2));
+        if (curr.z + 2 < size - 1 && grid[curr.x, curr.z + 2]) neighbors.Add((curr.x, curr.z + 2));
+
+        if (neighbors.Count > 0)
+        {
+            var next = neighbors[rng.Next(neighbors.Count)];
+            grid[curr.x + (next.x - curr.x) / 2, curr.z + (next.z - curr.z) / 2] = false;
+            grid[next.x, next.z] = false;
+            stack.Push(next);
+        }
+        else
+        {
+            stack.Pop();
+        }
+    }
+
+    int mid = size / 2;
+    grid[mid, 0] = false; grid[mid, size - 1] = false;
+    grid[0, mid] = false; grid[size - 1, mid] = false;
+    grid[mid, 1] = false; grid[mid, size - 2] = false;
+    grid[1, mid] = false; grid[size - 2, mid] = false;
+
+    return grid;
+}
+
+engine.Run(AktualizujLogikeGry);
