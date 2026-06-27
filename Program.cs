@@ -4,7 +4,7 @@ using Veldrid;
 using CyberEngine;
 using CyberEngine.Entities;
 
-Console.WriteLine("[CyberEngine] Uruchamianie silnika w trybie 3D...");
+Console.WriteLine("[CyberEngine] Uruchamianie silnika w trybie 3D FPP...");
 
 GraphicsBackend api = GraphicsBackend.OpenGL; 
 float cellSize = 2.0f; 
@@ -14,7 +14,7 @@ HashSet<Key> trzymaneKlawisze = new HashSet<Key>();
 Dictionary<(int x, int z), List<Wall>> zaladowaneChunki = new Dictionary<(int, int), List<Wall>>();
 
 GameEngine engine = new GameEngine();
-engine.Initialize("CyberEngine 3D v1.0", 1280, 720, api);
+engine.Initialize("CyberEngine 3D - Infinite FPP Labyrinth", 1280, 720, api);
 
 Player player = new Player();
 player.Transform.Position = new Core.Math.Vector3(cellSize * 7, 0f, cellSize * 7);
@@ -22,29 +22,39 @@ engine.GameObjects.Add(player);
 
 void AktualizujLogikeGry(double deltaTime, InputSnapshot snapshot)
 {
+    // Aktualizacja stanów klawiatury
     foreach (KeyEvent keyEvent in snapshot.KeyEvents)
     {
         if (keyEvent.Down) trzymaneKlawisze.Add(keyEvent.Key);
         else trzymaneKlawisze.Remove(keyEvent.Key);
     }
 
+    // 1. ROTACJA KAMERY FPP (Klawisze Q / E)
+    float predkoscObrotu = 2.5f; 
+    if (trzymaneKlawisze.Contains(Key.Q)) player.Yaw -= predkoscObrotu * (float)deltaTime;
+    if (trzymaneKlawisze.Contains(Key.E)) player.Yaw += predkoscObrotu * (float)deltaTime;
+
+    // 2. OBLICZANIE WEKTORÓW RELATYWNEGO RUCHU FPP
+    Core.Math.Vector3 forward = new Core.Math.Vector3(MathF.Sin(player.Yaw), 0f, -MathF.Cos(player.Yaw));
+    Core.Math.Vector3 right = new Core.Math.Vector3(MathF.Cos(player.Yaw), 0f, MathF.Sin(player.Yaw));
+
     Core.Math.Vector3 kierunekRuchu = Core.Math.Vector3.Zero;
-    if (trzymaneKlawisze.Contains(Key.W)) kierunekRuchu.Z = -1f; // Do przodu (w głąb ekranu)
-    if (trzymaneKlawisze.Contains(Key.S)) kierunekRuchu.Z = 1f;  // Do tyłu
-    if (trzymaneKlawisze.Contains(Key.A)) kierunekRuchu.X = -1f; // W lewo
-    if (trzymaneKlawisze.Contains(Key.D)) kierunekRuchu.X = 1f;  // W prawo
+
+    if (trzymaneKlawisze.Contains(Key.W)) kierunekRuchu += forward; // Przód
+    if (trzymaneKlawisze.Contains(Key.S)) kierunekRuchu -= forward; // Tył
+    if (trzymaneKlawisze.Contains(Key.A)) kierunekRuchu -= right;   // Strafe w lewo
+    if (trzymaneKlawisze.Contains(Key.D)) kierunekRuchu += right;   // Strafe w prawo
 
     if (kierunekRuchu.Length() > 0)
         player.Velocity = kierunekRuchu.Normalize() * player.Speed;
     else
         player.Velocity = Core.Math.Vector3.Zero;
 
+    // Przesunięcie pozycji gracza
     player.Transform.Position += player.Velocity * (float)deltaTime;
-
-    // Aktualizujemy pozycję kamery (silnik automatycznie podwiesi ją nad graczem w 3D)
     engine.CameraPosition = player.Transform.Position;
 
-    // NIESKOŃCZONY STREAMER CHUNKÓW
+    // 3. NIESKOŃCZONY STREAMER CHUNKÓW (SEKTORÓW ŚWIATA)
     float chunkWorldSize = chunkSize * cellSize;
     int currentChunkX = (int)MathF.Floor(player.Transform.Position.X / chunkWorldSize);
     int currentChunkZ = (int)MathF.Floor(player.Transform.Position.Z / chunkWorldSize);
@@ -89,7 +99,7 @@ void AktualizujLogikeGry(double deltaTime, InputSnapshot snapshot)
         }
     }
 
-    // SYSTEM REAKCJI NA KOLIZJE
+    // 4. SYSTEM REAKCJI NA KOLIZJE
     for (int i = 0; i < engine.GameObjects.Count; i++)
     {
         var obj = engine.GameObjects[i];

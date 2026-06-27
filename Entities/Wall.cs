@@ -13,18 +13,16 @@ public class Wall : GameObject
 
     public override void Render(GameEngine engine)
     {
-        // Dynamiczny Culling: jeśli ściana leży dalej niż 30 jednostek od kamery, nie wrzucaj jej do GPU
         float dx = Transform.Position.X - engine.CameraPosition.X;
         float dz = Transform.Position.Z - engine.CameraPosition.Z;
         if (MathF.Sqrt(dx * dx + dz * dz) > 30f) return;
 
-        // Rysujemy przestrzenny, wysoki szary blok (szerokość 2, wysokość 2, głębokość 2)
+        // Rysujemy wysoki sześcian ściany. Silnik automatycznie nałoży na niego teksturę wall_texture.png
         engine.DrawCube(
             Transform.Position.X - 1.0f, 
             0.0f, 
             Transform.Position.Z - 1.0f, 
-            2.0f, 2.0f, 2.0f, 
-            new RgbaFloat(0.22f, 0.22f, 0.25f, 1.0f)
+            2.0f, 2.0f, 2.0f
         );
     }
 }
