@@ -4,7 +4,7 @@ using Veldrid;
 using CyberEngine;
 using CyberEngine.Entities;
 
-Console.WriteLine("[CyberEngine] Uruchamianie silnika w trybie 3D FPP...");
+Console.WriteLine("[CyberEngine] Ładowanie zoptymalizowanych systemów uzbrojenia FPS...");
 
 GraphicsBackend api = GraphicsBackend.OpenGL; 
 float cellSize = 2.0f; 
@@ -12,9 +12,10 @@ int chunkSize = 15;
 
 HashSet<Key> trzymaneKlawisze = new HashSet<Key>();
 Dictionary<(int x, int z), List<Wall>> zaladowaneChunki = new Dictionary<(int, int), List<Wall>>();
+List<Laser> aktywnePociski = new List<Laser>();
 
 GameEngine engine = new GameEngine();
-engine.Initialize("CyberEngine 3D - Infinite FPP Labyrinth", 1280, 720, api);
+engine.Initialize("CyberEngine Project Matrix", 1280, 720, api);
 
 Player player = new Player();
 player.Transform.Position = new Core.Math.Vector3(cellSize * 7, 0f, cellSize * 7);
@@ -22,39 +23,88 @@ engine.GameObjects.Add(player);
 
 void AktualizujLogikeGry(double deltaTime, InputSnapshot snapshot)
 {
-    // Aktualizacja stanów klawiatury
+    // 🔥 ROZWIĄZANIE PUŁAPKI INPUTU: Zmienna rejestrująca impuls strzału
+    bool czyStrzelonoWTejKlatce = false;
+
     foreach (KeyEvent keyEvent in snapshot.KeyEvents)
     {
-        if (keyEvent.Down) trzymaneKlawisze.Add(keyEvent.Key);
-        else trzymaneKlawisze.Remove(keyEvent.Key);
+        if (keyEvent.Down) 
+        {
+            trzymaneKlawisze.Add(keyEvent.Key);
+            // Przechwytujemy sam moment uderzenia w klawisz, zanim nadejdzie sygnał puszczenia
+            if (keyEvent.Key == Key.Space) czyStrzelonoWTejKlatce = true;
+        }
+        else 
+        {
+            trzymaneKlawisze.Remove(keyEvent.Key);
+        }
     }
 
-    // 1. ROTACJA KAMERY FPP (Klawisze Q / E)
-    float predkoscObrotu = 2.5f; 
-    if (trzymaneKlawisze.Contains(Key.Q)) player.Yaw -= predkoscObrotu * (float)deltaTime;
-    if (trzymaneKlawisze.Contains(Key.E)) player.Yaw += predkoscObrotu * (float)deltaTime;
+    // 1. STEROWANIE MYSZKĄ FPP
+    float czuloscMyszy = 0.0025f;
+    player.Yaw += engine.MouseDelta.X * czuloscMyszy;
+    player.Pitch -= engine.MouseDelta.Y * czuloscMyszy;
+    player.Pitch = Math.Clamp(player.Pitch, -1.4f, 1.4f);
 
-    // 2. OBLICZANIE WEKTORÓW RELATYWNEGO RUCHU FPP
+    // 2. RESPONSYWNA MECHANIKA STRZELANIA 
+    if (czyStrzelonoWTejKlatce && player.ShootCooldown <= 0f && player.Energy > 0)
+    {
+        player.ShootCooldown = 0.15f; // Czas odgórnego przeładowania (szybkostrzelność działa)
+        player.WeaponRecoil = 0.25f;  // Siła fizycznego odrzutu Cyber-Blastera
+        player.Energy -= 5;           // Koszt strzału z baterii plazmowej
+        if (player.Energy < 0) player.Energy = 0;
+
+        engine.TriggerMuzzleFlash = true; // Komunikat dla shadera GPU o wygenerowaniu błysku gazów
+
+        // Pobieramy sferyczny wektor kierunku spojrzenia bezpośrednio z silnika graficznego
+        Core.Math.Vector3 pociskDir = new Core.Math.Vector3(engine.CameraForward.X, engine.CameraForward.Y, engine.CameraForward.Z);
+        Laser nowyPocisk = new Laser(player.Transform.Position, pociskDir);
+        
+        aktywnePociski.Add(nowyPocisk);
+        engine.GameObjects.Add(nowyPocisk); 
+    }
+
+    // Autoregeneracja ogniw energetycznych broni, gdy nie strzelasz
+    if (!trzymaneKlawisze.Contains(Key.Space) && player.Energy < 100)
+    {
+        player.Energy += 1;
+    }
+
+    // 3. AKTUALIZACJA I ERADYKACJA POCISKÓW Z PAMIĘCI GPU
+    List<Laser> doUsuniecia = new List<Laser>();
+    for (int i = 0; i < aktywnePociski.Count; i++)
+    {
+        var laser = aktywnePociski[i];
+        if (laser.LifeTime <= 0f)
+        {
+            doUsuniecia.Add(laser);
+        }
+    }
+    foreach (var laser in doUsuniecia)
+    {
+        aktywnePociski.Remove(laser);
+        engine.GameObjects.Remove(laser);
+    }
+
+    // 4. KIERUNKOWY RUCH RELATYWNY WSAD
     Core.Math.Vector3 forward = new Core.Math.Vector3(MathF.Sin(player.Yaw), 0f, -MathF.Cos(player.Yaw));
     Core.Math.Vector3 right = new Core.Math.Vector3(MathF.Cos(player.Yaw), 0f, MathF.Sin(player.Yaw));
 
     Core.Math.Vector3 kierunekRuchu = Core.Math.Vector3.Zero;
-
-    if (trzymaneKlawisze.Contains(Key.W)) kierunekRuchu += forward; // Przód
-    if (trzymaneKlawisze.Contains(Key.S)) kierunekRuchu -= forward; // Tył
-    if (trzymaneKlawisze.Contains(Key.A)) kierunekRuchu -= right;   // Strafe w lewo
-    if (trzymaneKlawisze.Contains(Key.D)) kierunekRuchu += right;   // Strafe w prawo
+    if (trzymaneKlawisze.Contains(Key.W)) kierunekRuchu += forward;
+    if (trzymaneKlawisze.Contains(Key.S)) kierunekRuchu -= forward;
+    if (trzymaneKlawisze.Contains(Key.A)) kierunekRuchu -= right;
+    if (trzymaneKlawisze.Contains(Key.D)) kierunekRuchu += right;
 
     if (kierunekRuchu.Length() > 0)
         player.Velocity = kierunekRuchu.Normalize() * player.Speed;
     else
         player.Velocity = Core.Math.Vector3.Zero;
 
-    // Przesunięcie pozycji gracza
     player.Transform.Position += player.Velocity * (float)deltaTime;
     engine.CameraPosition = player.Transform.Position;
 
-    // 3. NIESKOŃCZONY STREAMER CHUNKÓW (SEKTORÓW ŚWIATA)
+    // 5. NIESKOŃCZONY STREAMER SEKTORÓW (CHUNKI)
     float chunkWorldSize = chunkSize * cellSize;
     int currentChunkX = (int)MathF.Floor(player.Transform.Position.X / chunkWorldSize);
     int currentChunkZ = (int)MathF.Floor(player.Transform.Position.Z / chunkWorldSize);
@@ -99,12 +149,13 @@ void AktualizujLogikeGry(double deltaTime, InputSnapshot snapshot)
         }
     }
 
-    // 4. SYSTEM REAKCJI NA KOLIZJE
+    // 6. DETEKCJA FIZYKI KOLIZJI (Gracz i Pociski Laserowe)
     for (int i = 0; i < engine.GameObjects.Count; i++)
     {
         var obj = engine.GameObjects[i];
         if (obj is Wall wall)
         {
+            // Odpychanie gracza od ścian korytarza
             float dx = player.Transform.Position.X - wall.Transform.Position.X;
             float dz = player.Transform.Position.Z - wall.Transform.Position.Z;
             float odleglosc = MathF.Sqrt(dx * dx + dz * dz);
@@ -113,11 +164,20 @@ void AktualizujLogikeGry(double deltaTime, InputSnapshot snapshot)
             if (odleglosc < wymaganyDystans && odleglosc > 0.001f)
             {
                 float overlap = wymaganyDystans - odleglosc;
-                player.Transform.Position += new Core.Math.Vector3(
-                    (dx / odleglosc) * overlap,
-                    0f,
-                    (dz / odleglosc) * overlap
-                );
+                player.Transform.Position += new Core.Math.Vector3((dx / odleglosc) * overlap, 0f, (dz / odleglosc) * overlap);
+            }
+
+            // Destrukcja lecących laserów po kontakcie z przeszkodą statyczną
+            for (int j = 0; j < aktywnePociski.Count; j++)
+            {
+                var laser = aktywnePociski[j];
+                float ldx = laser.Transform.Position.X - wall.Transform.Position.X;
+                float ldz = laser.Transform.Position.Z - wall.Transform.Position.Z;
+                float lodleglosc = MathF.Sqrt(ldx * ldx + ldz * ldz);
+                if (lodleglosc < (laser.Radius + wall.Radius))
+                {
+                    laser.LifeTime = -1f; // Flaga wygaszenia życia pocisku
+                }
             }
         }
     }

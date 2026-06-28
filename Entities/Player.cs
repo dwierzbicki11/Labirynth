@@ -6,8 +6,19 @@ namespace CyberEngine.Entities;
 public class Player : GameObject
 {
     public Vector3 Velocity = Vector3.Zero;
-    public float Speed { get; set; } = 8.0f;
-    public float Yaw { get; set; } = 0f; // Kąt obrotu kamery i głowy postaci w radianach
+    public float Speed { get; set; } = 2.0f;
+    public float Yaw { get; set; } = 0f;   
+    public float Pitch { get; set; } = 0f; 
+    
+    // NOWY SYSTEM UNIKALNEGO MAGAZYNKA
+    public int Ammo { get; set; } = 30;         // Aktualny stan naboi
+    public int MaxMagazine { get; set; } = 30;  // Pojemność magazynka
+    public float ReloadTimer { get; set; } = 0f; // Licznik czasu przeładowania
+    public bool IsReloading => ReloadTimer > 0f;
+
+    public int Energy { get; set; } = 100;
+    public float ShootCooldown { get; set; } = 0f;
+    public float WeaponRecoil { get; set; } = 0f; 
 
     public Player()
     {
@@ -17,11 +28,25 @@ public class Player : GameObject
     public override void Update(double deltaTime)
     {
         Transform.Position += Velocity * (float)deltaTime;
+
+        if (ShootCooldown > 0f) ShootCooldown -= (float)deltaTime;
+        if (WeaponRecoil > 0f) WeaponRecoil -= (float)deltaTime * 5f;
+        if (WeaponRecoil < 0f) WeaponRecoil = 0f;
+
+        // Obsługa potoku przeładowania broni
+        if (ReloadTimer > 0f)
+        {
+            ReloadTimer -= (float)deltaTime;
+            if (ReloadTimer <= 0f)
+            {
+                Ammo = MaxMagazine; // Magazynek pełen
+                ReloadTimer = 0f;
+            }
+        }
     }
 
     public override void Render(GameEngine engine)
     {
-        // W trybie pierwszoosobowym (FPP) nie renderujemy własnego ciała, 
-        // aby nie zasłaniało widoku z oczu postaci.
+        // Widok pierwszoosobowy
     }
 }

@@ -1,5 +1,6 @@
 using Veldrid;
 using System;
+using System.Numerics;
 
 namespace CyberEngine.Entities;
 
@@ -17,12 +18,23 @@ public class Wall : GameObject
         float dz = Transform.Position.Z - engine.CameraPosition.Z;
         if (MathF.Sqrt(dx * dx + dz * dz) > 30f) return;
 
-        // Rysujemy wysoki sześcian ściany. Silnik automatycznie nałoży na niego teksturę wall_texture.png
+        // Rysujemy główną ścianę labiryntu
         engine.DrawCube(
-            Transform.Position.X - 1.0f, 
-            0.0f, 
-            Transform.Position.Z - 1.0f, 
+            Transform.Position.X - 1.0f, 0.0f, Transform.Position.Z - 1.0f, 
             2.0f, 2.0f, 2.0f
         );
+
+        // DETERMINISTYCZNE ROZMIESZCZANIE LAMPIONÓW NA ŚCIANACH
+        if ((int)(MathF.Abs(Transform.Position.X) + MathF.Abs(Transform.Position.Z)) % 14 == 0)
+        {
+            // Rejestrujemy punktowe pomarańczowe światło na wysokości oczu (Y = 1.0f)
+            engine.RegisterLantern(new Vector3(Transform.Position.X, 1.0f, Transform.Position.Z));
+            
+            // Rysujemy mały, wiszący neonowy bloczek lampionu
+            engine.DrawCube(
+                Transform.Position.X - 0.15f, 0.9f, Transform.Position.Z - 0.15f, 
+                0.3f, 0.3f, 0.3f
+            );
+        }
     }
 }
