@@ -6,6 +6,7 @@ using CyberEngine.Entities;
 
 Console.WriteLine("[CyberEngine] Ładowanie zoptymalizowanych systemów uzbrojenia FPS...");
 
+try{
 GraphicsBackend api = GraphicsBackend.OpenGL; 
 float cellSize = 2.0f; 
 int chunkSize = 15; 
@@ -15,14 +16,16 @@ Dictionary<(int x, int z), List<Wall>> zaladowaneChunki = new Dictionary<(int, i
 List<Laser> aktywnePociski = new List<Laser>();
 
 GameEngine engine = new GameEngine();
-engine.Initialize("CyberEngine Project Matrix", 1280, 720, api);
-
+Console.WriteLine("Wlaczanie silnika");
+engine.Initialize("CyberEngine Project Matrix", 800, 600, api);
+Console.WriteLine("jhkjhgkhgkh");
 Player player = new Player();
 player.Transform.Position = new Core.Math.Vector3(cellSize * 7, 0f, cellSize * 7);
 engine.GameObjects.Add(player);
 
 void AktualizujLogikeGry(double deltaTime, InputSnapshot snapshot)
 {
+    Console.WriteLine("Metoda logika");
     // 🔥 ROZWIĄZANIE PUŁAPKI INPUTU: Zmienna rejestrująca impuls strzału
     bool czyStrzelonoWTejKlatce = false;
 
@@ -228,5 +231,7 @@ bool[,] GenerujSektorMatematyczny(int cx, int cz, int size)
 
     return grid;
 }
-
+Console.WriteLine("Uruchamianie...");
 engine.Run(AktualizujLogikeGry);
+}
+catch(Exception ex){ Message.error(ex.Message);}

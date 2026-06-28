@@ -8,6 +8,7 @@ using StbImageSharp;
 using Veldrid;
 using Veldrid.Sdl2;
 using Veldrid.StartupUtilities;
+using Veldrid.SPIRV; // Wymagane do kompilacji krzyżowej GLSL -> SPIR-V
 using CyberEngine.Entities;
 
 namespace CyberEngine;
@@ -41,7 +42,7 @@ public class GameEngine
     private double _lastCpuTime = 0;
     private readonly Stopwatch _cpuStopwatch = Stopwatch.StartNew();
     private double _currentCpuPercent = 0;
-    private double ramUsage=0;
+    private double ramUsage = 0;
     private double _statTimer = 0;
     private double _currentFps = 0;
     private int _frameCount = 0;
@@ -98,11 +99,18 @@ public class GameEngine
         ['O'] = ["███", "█ █", "█ █", "█ █", "███"]
     };
 
-    private const string VertexShaderSource = @"#version 330 core
+    // =========================================================================================
+    // --- SHADERY OPENGL (Wersja 330 core) ---
+    // =========================================================================================
+    // =========================================================================================
+    // --- SHADERY OPENGL ES (Wersja 300 es dla Raspberry Pi 4) ---
+    // =========================================================================================
+    private const string VertexShaderGL = @"#version 300 es
+    precision highp float;
+    
     layout(location = 0) in vec3 InsidePos;
     layout(location = 1) in vec3 InNormal;
     layout(location = 2) in vec2 InUV;
-    // InMatId: 0.0 = Ściana Matrixa, 1.0 = Podłoga/Sufit
     layout(location = 3) in float InMatId; 
     
     layout(std140) uniform ViewProjBlock { mat4 u_ViewProj; };
@@ -119,7 +127,9 @@ public class GameEngine
         v_MatId = InMatId;
     }";
 
-    private const string FragmentShaderSource = @"#version 330 core
+    private const string FragmentShaderGL = @"#version 300 es
+    precision highp float;
+    
     in vec3 v_WorldPos;
     in vec3 v_Normal;
     in vec2 v_UV;
@@ -142,9 +152,7 @@ public class GameEngine
         vec3 materialColor = vec3(0.0);
         vec3 ambient = vec3(0.0);
 
-        // SEPARACJA MATERIAŁÓW NA GPU
         if (v_MatId < 0.5) {
-            // 🧱 MATERIAŁ ŚCIANY: Czysty kod kaskadowy Matrixa
             vec2 matrixUV = v_UV;
             float numColumns = 12.0;
             float colId = floor(matrixUV.x * numColumns);
@@ -159,18 +167,14 @@ public class GameEngine
             ambient = vec3(0.0, 0.02, 0.002) * materialColor;
         } 
         else {
-            // 🏁 MATERIAŁ PODŁOGI / SUFITU: Metalowa płyta z niebieskim neonem mainframe
             vec2 gridUV = fract(v_WorldPos.xz * 1.0);
             float gridLine = step(0.97, gridUV.x) + step(0.97, gridUV.y);
             
-            // Podłoga jest ciemnoszara, a nacięcia świecą głębokim cyber-błękitem
             materialColor = mix(vec3(0.11, 0.11, 0.14), vec3(0.0, 0.45, 1.0), gridLine);
             ambient = vec3(0.01, 0.01, 0.015); 
         }
 
         vec3 lighting = vec3(0.0);
-
-        // 1. POPRAWKA: LATARKA GRACZA JEST TERAZ JASNOBIAŁA (Rozbija wszechobecną zieleń)
         vec3 flashLightDir = normalize(u_FlashlightPos.xyz - v_WorldPos);
         float flashDist = length(u_FlashlightPos.xyz - v_WorldPos);
         float flashAtt = 1.0 / (1.0 + 0.04 * flashDist + 0.008 * flashDist * flashDist);
@@ -180,24 +184,22 @@ public class GameEngine
             float epsilon = 0.04;
             float intensity = clamp((theta - u_FlashlightPos.w) / epsilon, 0.0, 1.0);
             float diff = max(dot(normal, flashLightDir), 0.0);
-            // Zimne, białe światło deweloperskie (Jasność x3.0)
             lighting += diff * vec3(0.95, 0.95, 1.0) * flashAtt * intensity * u_FlashlightDir.w;
         }
 
-        // 2. POPRAWKA: LAMPIONY NA ŚCIANACH ŚWIECĄ CIEPŁYM NEONOWYM BURSZTYNEM
         for (int i = 0; i < u_LanternCount; i++) {
             vec3 lanternPos = u_Lanterns[i].xyz;
             float lanternAtt = 1.0 / (1.0 + 0.3 * length(lanternPos - v_WorldPos) + 0.2 * dot(lanternPos - v_WorldPos, lanternPos - v_WorldPos));
             vec3 lanternDir = normalize(lanternPos - v_WorldPos);
             float diff = max(dot(normal, lanternDir), 0.0);
-            // Przepiękny pomarańczowo-bursztynowy blask dla filmowego kontrastu
             lighting += diff * vec3(1.0, 0.45, 0.06) * lanternAtt * 2.8;
         }
 
         FragColor = vec4(ambient + lighting * materialColor, 1.0);
     }";
 
-    private const string HudVertexShaderSource = @"#version 330 core
+    private const string HudVertexShaderGL = @"#version 300 es
+    precision highp float;
     layout(location = 0) in vec2 InsidePos;
     layout(location = 1) in vec4 InColor;
     out vec4 v_Color;
@@ -206,9 +208,121 @@ public class GameEngine
         v_Color = InColor;
     }";
 
-    private const string HudFragmentShaderSource = @"#version 330 core
+    private const string HudFragmentShaderGL = @"#version 300 es
+    precision highp float;
     in vec4 v_Color;
     out vec4 FragColor;
+    void main() {
+        FragColor = v_Color;
+    }";
+    // =========================================================================================
+    // --- SHADERY VULKAN (Wersja 450) ---
+    // =========================================================================================
+    private const string VertexShaderVK = @"#version 450
+    layout(location = 0) in vec3 InsidePos;
+    layout(location = 1) in vec3 InNormal;
+    layout(location = 2) in vec2 InUV;
+    layout(location = 3) in float InMatId; 
+    
+    layout(set = 0, binding = 0) uniform ViewProjBlock { mat4 u_ViewProj; };
+    
+    layout(location = 0) out vec3 v_WorldPos;
+    layout(location = 1) out vec3 v_Normal;
+    layout(location = 2) out vec2 v_UV;
+    layout(location = 3) out float v_MatId;
+
+    void main() {
+        gl_Position = u_ViewProj * vec4(InsidePos, 1.0);
+        v_WorldPos = InsidePos;
+        v_Normal = InNormal;
+        v_UV = InUV;
+        v_MatId = InMatId;
+    }";
+
+    private const string FragmentShaderVK = @"#version 450
+    layout(location = 0) in vec3 v_WorldPos;
+    layout(location = 1) in vec3 v_Normal;
+    layout(location = 2) in vec2 v_UV;
+    layout(location = 3) in float v_MatId;
+    
+    layout(set = 0, binding = 1) uniform LightBlock {
+        vec4 u_FlashlightPos;
+        vec4 u_FlashlightDir;
+        vec4 u_Lanterns[8];
+        int u_LanternCount;
+        float u_Time; 
+    };
+    
+    layout(set = 0, binding = 2) uniform texture2D u_Texture;
+    layout(set = 0, binding = 3) uniform sampler u_Sampler;
+    
+    layout(location = 0) out vec4 FragColor;
+
+    float random(float x) { return fract(sin(x * 12.9898) * 43758.5453); }
+
+    void main() {
+        vec3 normal = normalize(v_Normal);
+        vec3 materialColor = vec3(0.0);
+        vec3 ambient = vec3(0.0);
+
+        if (v_MatId < 0.5) {
+            vec2 matrixUV = v_UV;
+            float numColumns = 12.0;
+            float colId = floor(matrixUV.x * numColumns);
+            float speed = 0.4 + 1.2 * random(colId * 45.32);
+            float drift = u_Time * speed;
+            
+            vec2 fallingUV = vec2(matrixUV.x, fract(matrixUV.y + drift));
+            vec4 rawTex = texture(sampler2D(u_Texture, u_Sampler), fallingUV);
+            
+            float glowWave = fract(matrixUV.y * 3.0 + drift);
+            materialColor = vec3(0.0, 1.0, 0.2) * rawTex.rgb * (0.3 + 0.7 * glowWave);
+            ambient = vec3(0.0, 0.02, 0.002) * materialColor;
+        } 
+        else {
+            vec2 gridUV = fract(v_WorldPos.xz * 1.0);
+            float gridLine = step(0.97, gridUV.x) + step(0.97, gridUV.y);
+            
+            materialColor = mix(vec3(0.11, 0.11, 0.14), vec3(0.0, 0.45, 1.0), gridLine);
+            ambient = vec3(0.01, 0.01, 0.015); 
+        }
+
+        vec3 lighting = vec3(0.0);
+        vec3 flashLightDir = normalize(u_FlashlightPos.xyz - v_WorldPos);
+        float flashDist = length(u_FlashlightPos.xyz - v_WorldPos);
+        float flashAtt = 1.0 / (1.0 + 0.04 * flashDist + 0.008 * flashDist * flashDist);
+        float theta = dot(flashLightDir, normalize(-u_FlashlightDir.xyz));
+        
+        if (theta > u_FlashlightPos.w) {
+            float epsilon = 0.04;
+            float intensity = clamp((theta - u_FlashlightPos.w) / epsilon, 0.0, 1.0);
+            float diff = max(dot(normal, flashLightDir), 0.0);
+            lighting += diff * vec3(0.95, 0.95, 1.0) * flashAtt * intensity * u_FlashlightDir.w;
+        }
+
+        for (int i = 0; i < u_LanternCount; i++) {
+            vec3 lanternPos = u_Lanterns[i].xyz;
+            float lanternAtt = 1.0 / (1.0 + 0.3 * length(lanternPos - v_WorldPos) + 0.2 * dot(lanternPos - v_WorldPos, lanternPos - v_WorldPos));
+            vec3 lanternDir = normalize(lanternPos - v_WorldPos);
+            float diff = max(dot(normal, lanternDir), 0.0);
+            lighting += diff * vec3(1.0, 0.45, 0.06) * lanternAtt * 2.8;
+        }
+
+        FragColor = vec4(ambient + lighting * materialColor, 1.0);
+    }";
+
+    private const string HudVertexShaderVK = @"#version 450
+    layout(location = 0) in vec2 InsidePos;
+    layout(location = 1) in vec4 InColor;
+    layout(location = 0) out vec4 v_Color;
+    void main() {
+        gl_Position = vec4(InsidePos, 0.0, 1.0);
+        v_Color = InColor;
+    }";
+
+    private const string HudFragmentShaderVK = @"#version 450
+    layout(location = 0) in vec4 v_Color;
+    layout(location = 0) out vec4 FragColor;
     void main() {
         FragColor = v_Color;
     }";
@@ -232,7 +346,7 @@ public class GameEngine
 
         LoadWallTexture();
         PrepareGraphicsPipeline();
-        Message.ok($"System Cyber-HUD załadowany.");
+        Message.ok($"System Cyber-HUD załadowany. Aktywne API: {_device.BackendType}");
     }
 
     private void LoadWallTexture()
@@ -287,9 +401,38 @@ public class GameEngine
     private void PrepareGraphicsPipeline()
     {
         ResourceFactory factory = _device.ResourceFactory;
+        Shader[] shaders;
+        Shader[] hudShaders;
 
-        Shader vertexShader = factory.CreateShader(new ShaderDescription(ShaderStages.Vertex, Encoding.UTF8.GetBytes(VertexShaderSource), "main"));
-        Shader fragmentShader = factory.CreateShader(new ShaderDescription(ShaderStages.Fragment, Encoding.UTF8.GetBytes(FragmentShaderSource), "main"));
+        // TWARDE ROUTOWANIE API ZAMIAST DZIWNEGO FALLBACKU
+        switch (_device.BackendType)
+        {
+            case GraphicsBackend.Vulkan:
+                shaders = factory.CreateFromSpirv(
+                    new ShaderDescription(ShaderStages.Vertex, Encoding.UTF8.GetBytes(VertexShaderVK), "main"),
+                    new ShaderDescription(ShaderStages.Fragment, Encoding.UTF8.GetBytes(FragmentShaderVK), "main")
+                );
+                hudShaders = factory.CreateFromSpirv(
+                    new ShaderDescription(ShaderStages.Vertex, Encoding.UTF8.GetBytes(HudVertexShaderVK), "main"),
+                    new ShaderDescription(ShaderStages.Fragment, Encoding.UTF8.GetBytes(HudFragmentShaderVK), "main")
+                );
+                break;
+
+            case GraphicsBackend.OpenGL:
+            case GraphicsBackend.OpenGLES:
+                shaders = new[] {
+                    factory.CreateShader(new ShaderDescription(ShaderStages.Vertex, Encoding.UTF8.GetBytes(VertexShaderGL), "main")),
+                    factory.CreateShader(new ShaderDescription(ShaderStages.Fragment, Encoding.UTF8.GetBytes(FragmentShaderGL), "main"))
+                };
+                hudShaders = new[] {
+                    factory.CreateShader(new ShaderDescription(ShaderStages.Vertex, Encoding.UTF8.GetBytes(HudVertexShaderGL), "main")),
+                    factory.CreateShader(new ShaderDescription(ShaderStages.Fragment, Encoding.UTF8.GetBytes(HudFragmentShaderGL), "main"))
+                };
+                break;
+
+            default:
+                throw new NotSupportedException($"Backend {_device.BackendType} nie jest obecnie obsługiwany. Brak kompatybilnych shaderów.");
+        }
 
         _vertexBuffer = factory.CreateBuffer(new BufferDescription(4000000, BufferUsage.VertexBuffer));
         _viewProjBuffer = factory.CreateBuffer(new BufferDescription(64, BufferUsage.UniformBuffer));
@@ -316,20 +459,14 @@ public class GameEngine
                         new VertexElementDescription("InsidePos", VertexElementSemantic.Position, VertexElementFormat.Float3, 0),
                         new VertexElementDescription("InNormal", VertexElementSemantic.Normal, VertexElementFormat.Float3, 12), 
                         new VertexElementDescription("InUV", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float2, 24),
-                        // 🔥 REJESTRACJA STRUKTURY ID MATERIAŁU NA GPU DLA KONTROLI KOLORU
                         new VertexElementDescription("InMatId", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float1, 32)
                     ) 
                 },
-                new[] { vertexShader, fragmentShader }
+                shaders // Dynamicznie przypisane shadery z instrukcji switch
             ),
             Outputs = _device.MainSwapchain.Framebuffer.OutputDescription
         };
         _pipeline = factory.CreateGraphicsPipeline(ref pd);
-
-        Shader hudVertex = factory.CreateShader(new ShaderDescription(ShaderStages.Vertex, Encoding.UTF8.GetBytes(HudVertexShaderSource), "main"));
-        Shader hudFragment = factory.CreateShader(new ShaderDescription(ShaderStages.Fragment, Encoding.UTF8.GetBytes(HudFragmentShaderSource), "main"));
-
-        _hudVertexBuffer = factory.CreateBuffer(new BufferDescription(1000000, BufferUsage.VertexBuffer));
 
         GraphicsPipelineDescription hpd = new GraphicsPipelineDescription {
             BlendState = BlendStateDescription.SingleAlphaBlend, 
@@ -344,11 +481,13 @@ public class GameEngine
                         new VertexElementDescription("InColor", VertexElementSemantic.Color, VertexElementFormat.Float4, 8)
                     )
                 },
-                new[] { hudVertex, hudFragment }
+                hudShaders // Dynamicznie przypisane shadery z instrukcji switch
             ),
             Outputs = _device.MainSwapchain.Framebuffer.OutputDescription
         };
         _hudPipeline = factory.CreateGraphicsPipeline(ref hpd);
+        
+        _hudVertexBuffer = factory.CreateBuffer(new BufferDescription(1000000, BufferUsage.VertexBuffer));
     }
 
     public void RegisterLantern(Vector3 position)
@@ -356,7 +495,6 @@ public class GameEngine
         _frameLanterns.Add(position);
     }
 
-    // Generator horyzontalnych płaszczyzn na karcie graficznej (Dla podłogi i sufitu)
     public void DrawHorizontalPlane(float x, float y, float z, float width, float depth, float matId, float nx, float ny, float nz)
     {
         float minX = x; float maxX = x + width;
@@ -379,7 +517,6 @@ public class GameEngine
         float minY = y; float maxY = y + height;
         float minZ = z; float maxZ = z + depth;
 
-        // Ściany dostają flagę materiału 0.0f (Matrix Code Rain)
         AddVertex(minX, minY, maxZ, 0f, 0f, 1f, 0f, 1f, 0f); AddVertex(minX, maxY, maxZ, 0f, 0f, 1f, 0f, 0f, 0f); AddVertex(maxX, maxY, maxZ, 0f, 0f, 1f, 1f, 0f, 0f);
         AddVertex(maxX, maxY, maxZ, 0f, 0f, 1f, 1f, 0f, 0f); AddVertex(maxX, minY, maxZ, 0f, 0f, 1f, 1f, 1f, 0f); AddVertex(minX, minY, maxZ, 0f, 0f, 1f, 0f, 1f, 0f);
         AddVertex(minX, minY, minZ, 0f, 0f, -1f, 1f, 1f, 0f); AddVertex(maxX, minY, minZ, 0f, 0f, -1f, 0f, 1f, 0f); AddVertex(maxX, maxY, minZ, 0f, 0f, -1f, 0f, 0f, 0f);
@@ -487,7 +624,6 @@ public class GameEngine
             onLogicUpdate(deltaTime, snapshot);
             foreach (var obj in GameObjects) obj.Update(deltaTime);
 
-            // TELEMETRIA SYSTEMOWA
             _frameCount++;
             _statTimer += deltaTime;
             if (_statTimer >= 0.25) 
@@ -545,10 +681,7 @@ public class GameEngine
             _frameLanterns.Clear();
             _batchVertices.Clear();
 
-            // =========================================================================
-            // 🔥 NOWY SYSTEM: PROCEDURALNE GENEROWANIE PODŁOGI I SUFITU WOKÓŁ GRACZA
-            // =========================================================================
-            float viewDist = 36f; // Zasięg rysowania podłogi (w metrach)
+            float viewDist = 36f; 
             float fXStart = MathF.Floor(CameraPosition.X / 2f) * 2f - viewDist;
             float fXEnd = MathF.Floor(CameraPosition.X / 2f) * 2f + viewDist;
             float fZStart = MathF.Floor(CameraPosition.Z / 2f) * 2f - viewDist;
@@ -558,14 +691,11 @@ public class GameEngine
             {
                 for (float z = fZStart; z <= fZEnd; z += 2f)
                 {
-                    // Podłoga: Y = 0.0, normalna w górę (0,1,0), flaga materiału = 1.0f
                     DrawHorizontalPlane(x, 0.0f, z, 2f, 2f, 1.0f, 0f, 1f, 0f);
-                    // Sufit: Y = 2.0, normalna w dół (0,-1,0), flaga materiału = 1.0f
                     DrawHorizontalPlane(x, 2.0f, z, 2f, 2f, 1.0f, 0f, -1f, 0f);
                 }
             }
 
-            // Renderowanie ścian i pocisków
             foreach (var obj in GameObjects) obj.Render(this);
 
             _frameLanterns.Sort((a, b) => Vector3.DistanceSquared(eyePosition, a).CompareTo(Vector3.DistanceSquared(eyePosition, b)));
@@ -595,12 +725,10 @@ public class GameEngine
                 _commandList.SetPipeline(_pipeline);
                 _commandList.SetGraphicsResourceSet(0, _resourceSet);
                 _commandList.SetVertexBuffer(0, _vertexBuffer);
-                // Stride wynosi teraz 9 floatów na wierzchołek (XYZ, NormalXYZ, UV, MatID)
                 _commandList.Draw((uint)(_batchVertices.Count / 9)); 
                 _gpuDrawCallsCounter++;
             }
 
-            // HUD OVERLAY LAYER
             _hudBatchVertices.Clear();
             RgbaFloat matrixGreen = new RgbaFloat(0.0f, 1.0f, 0.2f, 1.0f);
             RgbaFloat darkGreenBar = new RgbaFloat(0.0f, 0.25f, 0.05f, 1.0f);
@@ -619,19 +747,16 @@ public class GameEngine
             double vramAllocated = (4000000 + 1000000 + 64 + 176) / (1024.0 * 1024.0); 
             DrawHudText($"VRAM EST: {vramAllocated:F2} MB", 25, 180, 3f, matrixGreen);
 
-            // WOJSKOWY CELOWNIK CYFROWY
             float midX = _window.Width / 2f; float midY = _window.Height / 2f;
             DrawHudRectangle(midX - 12, midY - 1, 24, 2, matrixGreen); 
             DrawHudRectangle(midX - 1, midY - 12, 2, 24, matrixGreen); 
             DrawHudRectangle(midX - 2, midY - 2, 4, 4, new RgbaFloat(1.0f, 0.0f, 0.0f, 0.9f)); 
 
-            // ENERGIA / AMUNICJA
             int currentEnergy = 100;
             if (GameObjects.Count > 0 && GameObjects[0] is Player pl) currentEnergy = pl.Energy;
             DrawHudRectangle(15, _window.Height - 65, 250, 50, new RgbaFloat(0.0f, 0.05f, 0.01f, 0.70f));
             DrawHudText($"ENG: {currentEnergy} %", 30, _window.Height - 53, 4f, matrixGreen);
 
-            // CYBER-BLASTER INTERFACE
             float gunBaseX = _window.Width - 320f;
             float gunBaseY = _window.Height - 240f + (playerRecoil * 120f);
 
