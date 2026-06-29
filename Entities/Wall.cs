@@ -1,6 +1,6 @@
-using Veldrid;
 using System;
 using System.Numerics;
+using CyberEngine.Core;
 
 namespace CyberEngine.Entities;
 
@@ -8,7 +8,7 @@ public class Wall : GameObject
 {
     public Wall(float x, float z, float size)
     {
-        Transform.Position = new Core.Math.Vector3(x, 0f, z);
+        Transform.Position = new Vector3(x, 0f, z);
         Radius = size * 0.5f;
     }
 
@@ -17,8 +17,9 @@ public class Wall : GameObject
         float dx = Transform.Position.X - engine.CameraPosition.X;
         float dz = Transform.Position.Z - engine.CameraPosition.Z;
         
-        // Optymalizacja: Używamy dystansu do kwadratu (MathF.Sqrt zabija CPU na ARM)
-        if ((dx * dx + dz * dz) > 900f) return; 
+        // Optymalizacja renderowania na podstawie wybranej jakości grafiki w ustawieniach
+        float maxDist = SystemConfig.GraphicsQuality switch { 0 => 256f, 1 => 576f, 2 => 1296f, _ => 576f }; // 16^2, 24^2, 36^2
+        if ((dx * dx + dz * dz) > maxDist) return; 
 
         engine.DrawCube(Transform.Position.X - 1.0f, 0.0f, Transform.Position.Z - 1.0f, 2.0f, 2.0f, 2.0f);
 
@@ -29,4 +30,3 @@ public class Wall : GameObject
         }
     }
 }
-
