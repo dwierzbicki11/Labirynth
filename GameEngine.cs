@@ -188,14 +188,31 @@ public class GameEngine
 
         if (_device.BackendType != GraphicsBackend.Vulkan) throw new NotSupportedException("Wymagany Vulkan.");
 
-        try
+         try
         {
-            shaders = new[] { factory.CreateShader(new ShaderDescription(ShaderStages.Vertex, File.ReadAllBytes("Shaders/vertex.spv"), "main")), factory.CreateShader(new ShaderDescription(ShaderStages.Fragment, File.ReadAllBytes("Shaders/fragment.spv"), "main")) };
-            hudShaders = new[] { factory.CreateShader(new ShaderDescription(ShaderStages.Vertex, File.ReadAllBytes("Shaders/hud_vertex.spv"), "main")), factory.CreateShader(new ShaderDescription(ShaderStages.Fragment, File.ReadAllBytes("Shaders/hud_fragment.spv"), "main")) };
-            postShaders = new[] { factory.CreateShader(new ShaderDescription(ShaderStages.Vertex, File.ReadAllBytes("Shaders/post_vertex.spv"), "main")), factory.CreateShader(new ShaderDescription(ShaderStages.Fragment, File.ReadAllBytes("Shaders/post_fragment.spv"), "main")) };
+            // Bezpieczne kotwiczenie ścieżek dla skompilowanego pliku binarnego
+            string baseDir = AppContext.BaseDirectory;
+            byte[] vertSpv = File.ReadAllBytes(Path.Combine(baseDir, "Shaders", "vertex.spv"));
+            byte[] fragSpv = File.ReadAllBytes(Path.Combine(baseDir, "Shaders", "fragment.spv"));
+            byte[] hudVertSpv = File.ReadAllBytes(Path.Combine(baseDir, "Shaders", "hud_vertex.spv"));
+            byte[] hudFragSpv = File.ReadAllBytes(Path.Combine(baseDir, "Shaders", "hud_fragment.spv"));
+            byte[] postVertSpv = File.ReadAllBytes(Path.Combine(baseDir, "Shaders", "post_vertex.spv"));
+            byte[] postFragSpv = File.ReadAllBytes(Path.Combine(baseDir, "Shaders", "post_fragment.spv"));
+
+            shaders = new[] {
+                factory.CreateShader(new ShaderDescription(ShaderStages.Vertex, vertSpv, "main")),
+                factory.CreateShader(new ShaderDescription(ShaderStages.Fragment, fragSpv, "main"))
+            };
+            hudShaders = new[] {
+                factory.CreateShader(new ShaderDescription(ShaderStages.Vertex, hudVertSpv, "main")),
+                factory.CreateShader(new ShaderDescription(ShaderStages.Fragment, hudFragSpv, "main"))
+            };
+            postShaders = new[] {
+                factory.CreateShader(new ShaderDescription(ShaderStages.Vertex, postVertSpv, "main")),
+                factory.CreateShader(new ShaderDescription(ShaderStages.Fragment, postFragSpv, "main"))
+            };
         }
         catch (Exception ex) { throw new Exception("Błąd Vulkana! Brak plików SPV. Uruchom skrypt CompileShaders.sh. " + ex.Message); }
-
         _vertexBuffer = factory.CreateBuffer(new BufferDescription(8000000, BufferUsage.VertexBuffer));
         _viewProjBuffer = factory.CreateBuffer(new BufferDescription(64, BufferUsage.UniformBuffer));
         _lightBuffer = factory.CreateBuffer(new BufferDescription(176, BufferUsage.UniformBuffer)); 
