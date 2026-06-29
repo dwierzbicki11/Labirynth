@@ -94,6 +94,18 @@ public class GameEngine
         public Vector4 Lantern4; public Vector4 Lantern5; public Vector4 Lantern6; public Vector4 Lantern7;
         public int LanternCount; public float Time; private float p2; private float p3; 
     }
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    public struct GraphicsSettingsBlock {
+        public float RenderScale;
+        public int Bloom; // int zamiast bool dla zgodności ze strukturą GPU
+        public int MotionBlur; 
+        public float BlurIntensity;
+        public int Shadows;
+        public int AntiAliasing;
+        public int AO;
+        private float _padding; 
+    }
+    private DeviceBuffer _settingsBuffer;
 
     private static readonly Dictionary<char, string[]> Font = new() {
         ['0']=["███","█ █","█ █","█ █","███"], ['1']=["  █","  █","  █","  █","  █"], ['2']=["███","  █","███","█  ","███"], ['3']=["███","  █","███","  █","███"],
@@ -139,7 +151,7 @@ public class GameEngine
         _device = VeldridStartup.CreateGraphicsDevice(_window, new GraphicsDeviceOptions { Debug = false, HasMainSwapchain = true, SyncToVerticalBlank = SystemConfig.VSync, PreferStandardClipSpaceYDirection = true, SwapchainDepthFormat = PixelFormat.D24_UNorm_S8_UInt }, backend);
         _commandList = _device.ResourceFactory.CreateCommandList();
         _currentRenderScale = SystemConfig.RenderScale;
-
+        _settingsBuffer = _device.ResourceFactory.CreateBuffer(new BufferDescription(32, BufferUsage.UniformBuffer));
         LoadWallTexture();
         PrepareGraphicsPipeline();
         CreateOffscreenFramebuffer();
@@ -373,7 +385,16 @@ public class GameEngine
             }
 
             _gpuDrawCallsCounter = 0; _gpuVerticesCounter = 0;
-
+            GraphicsSettingsBlock settings = new GraphicsSettingsBlock {
+                RenderScale = SystemConfig.RenderScale,
+                Bloom = SystemConfig.BloomEnabled ? 1 : 0,
+                MotionBlur = SystemConfig.MotionBlurIntensity > 0 ? 1 : 0,
+                BlurIntensity = SystemConfig.MotionBlurIntensity,
+                Shadows = SystemConfig.ShadowsEnabled ? 1 : 0,
+                AntiAliasing = SystemConfig.AntiAliasingMode,
+                AO = SystemConfig.AmbientOcclusionEnabled ? 1 : 0
+            };
+            _commandList.UpdateBuffer(_settingsBuffer, 0, settings);
             _commandList.Begin();
 
             // 🔥 PRZEBIEG 1: Renderowanie 3D do tekstury mniejszej o wskaźnik RenderScale
