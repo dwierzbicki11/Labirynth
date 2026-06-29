@@ -1,5 +1,4 @@
 using System.Numerics;
-using CyberEngine.Entities;
 
 namespace CyberEngine.Entities;
 
@@ -8,21 +7,17 @@ public class Laser : GameObject
     public Vector3 Direction;
     public float LifeTime = 2.0f;
 
-    public Laser(Core.Math.Vector3 pos, Core.Math.Vector3 dir)
+    public Laser(Vector3 pos, Vector3 dir)
     {
         Transform.Position = pos;
-        Direction = new Vector3(dir.X, dir.Y, dir.Z);
-        Radius = 0.1f; // Mniejszy promień kolizji dla pocisku
+        Direction = dir;
+        Radius = 0.1f;
     }
 
     public override void Update(double dt)
     {
-        Transform.Position += new Core.Math.Vector3(Direction.X, Direction.Y, Direction.Z) * 35.0f * (float)dt;
+        Transform.Position += Direction * 35.0f * (float)dt;
         LifeTime -= (float)dt;
-        
-        if (LifeTime <= 0f)
-        {
-            Destroy(); // Bezpieczne uśmiercenie pocisku
-        }
+        if (LifeTime <= 0f) Destroy();
     }
 }
