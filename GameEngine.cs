@@ -146,6 +146,7 @@ public class GameEngine
 
     public void Initialize(string title, int width, int height, GraphicsBackend backend)
     {
+        Console.WriteLine("Tworzenie okna");
         WindowCreateInfo windowCI = new WindowCreateInfo { X = 0, Y = 0, WindowWidth = width, WindowHeight = height, WindowTitle = title, WindowInitialState = WindowState.FullScreen };
         _window = VeldridStartup.CreateWindow(ref windowCI);
         _device = VeldridStartup.CreateGraphicsDevice(_window, new GraphicsDeviceOptions { Debug = false, HasMainSwapchain = true, SyncToVerticalBlank = SystemConfig.VSync, PreferStandardClipSpaceYDirection = true, SwapchainDepthFormat = PixelFormat.D24_UNorm_S8_UInt }, backend);
