@@ -1,4 +1,4 @@
-using Core.Math;
+using System.Numerics;
 using Veldrid;
 
 namespace CyberEngine.Entities;
@@ -6,24 +6,20 @@ namespace CyberEngine.Entities;
 public class Player : GameObject
 {
     public Vector3 Velocity = Vector3.Zero;
-    public float Speed { get; set; } = 2.0f;
+    public float Speed { get; set; } = 3.5f;
     public float Yaw { get; set; } = 0f;   
     public float Pitch { get; set; } = 0f; 
     
-    // NOWY SYSTEM UNIKALNEGO MAGAZYNKA
-    public int Ammo { get; set; } = 30;         // Aktualny stan naboi
-    public int MaxMagazine { get; set; } = 30;  // Pojemność magazynka
-    public float ReloadTimer { get; set; } = 0f; // Licznik czasu przeładowania
+    public int Ammo { get; set; } = 30;
+    public int MaxMagazine { get; set; } = 30;
+    public float ReloadTimer { get; set; } = 0f;
     public bool IsReloading => ReloadTimer > 0f;
 
     public int Energy { get; set; } = 100;
     public float ShootCooldown { get; set; } = 0f;
     public float WeaponRecoil { get; set; } = 0f; 
 
-    public Player()
-    {
-        Radius = 0.35f; 
-    }
+    public Player() { Radius = 0.35f; }
 
     public override void Update(double deltaTime)
     {
@@ -33,20 +29,14 @@ public class Player : GameObject
         if (WeaponRecoil > 0f) WeaponRecoil -= (float)deltaTime * 5f;
         if (WeaponRecoil < 0f) WeaponRecoil = 0f;
 
-        // Obsługa potoku przeładowania broni
         if (ReloadTimer > 0f)
         {
             ReloadTimer -= (float)deltaTime;
             if (ReloadTimer <= 0f)
             {
-                Ammo = MaxMagazine; // Magazynek pełen
+                Ammo = MaxMagazine;
                 ReloadTimer = 0f;
             }
         }
-    }
-
-    public override void Render(GameEngine engine)
-    {
-        // Widok pierwszoosobowy
     }
 }
