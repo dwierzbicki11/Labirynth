@@ -1,8 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="MojSilnikFizyczny\Core\Core.csproj" />
-  </ItemGroup>
+</ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="StbImageSharp" Version="2.30.15" />
@@ -16,7 +15,6 @@
     <TargetFramework>net11.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <DefaultItemExcludes>$(DefaultItemExcludes);MojSilnikFizyczny/**</DefaultItemExcludes>
   </PropertyGroup>
 
 </Project>

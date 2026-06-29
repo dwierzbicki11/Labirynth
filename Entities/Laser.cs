@@ -12,11 +12,17 @@ public class Laser : GameObject
     {
         Transform.Position = pos;
         Direction = new Vector3(dir.X, dir.Y, dir.Z);
+        Radius = 0.1f; // Mniejszy promień kolizji dla pocisku
     }
 
     public override void Update(double dt)
     {
         Transform.Position += new Core.Math.Vector3(Direction.X, Direction.Y, Direction.Z) * 35.0f * (float)dt;
         LifeTime -= (float)dt;
+        
+        if (LifeTime <= 0f)
+        {
+            Destroy(); // Bezpieczne uśmiercenie pocisku
+        }
     }
 }
