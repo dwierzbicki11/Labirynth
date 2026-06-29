@@ -12,6 +12,7 @@ using Veldrid.Sdl2;
 using Veldrid.StartupUtilities;
 using CyberEngine.Entities;
 using CyberEngine.Core;
+using CyberEngine.Scenes;
 
 namespace CyberEngine;
 
@@ -26,7 +27,6 @@ public class GameEngine
     private DeviceBuffer _viewProjBuffer = null!;
     private DeviceBuffer _lightBuffer = null!; 
     private ResourceSet _resourceSet = null!;
-    
     private readonly float[] _batchVertices = new float[2000000]; 
     private int _batchIndex = 0;
     private readonly List<Vector3> _frameLanterns = new();
@@ -35,6 +35,16 @@ public class GameEngine
     private DeviceBuffer _hudVertexBuffer = null!;
     private readonly float[] _hudBatchVertices = new float[100000];
     private int _hudBatchIndex = 0;
+
+    // 🔥 NOWE: Zmienne potoku Post-Process i Off-screen
+    private Pipeline _postPipeline = null!;
+    private ResourceLayout _postResourceLayout = null!;
+    private Framebuffer _offscreenFB = null!;
+    private Texture _offscreenColor = null!;
+    private Texture _offscreenDepth = null!;
+    private TextureView _offscreenColorView = null!;
+    private ResourceSet _postResourceSet = null!;
+    private float _currentRenderScale = 1.0f;
 
     private Texture _wallTexture = null!;
     private TextureView _wallTextureView = null!;
@@ -47,7 +57,6 @@ public class GameEngine
     private double _statTimer = 0;
     private double _currentFps = 0;
     private int _frameCount = 0;
-
     private int _gpuDrawCallsCounter = 0;
     private int _gpuVerticesCounter = 0;
     private int _lastGpuDrawCalls = 0;
@@ -81,9 +90,7 @@ public class GameEngine
         public Vector4 FlashlightDir; 
         public Vector4 Lantern0; public Vector4 Lantern1; public Vector4 Lantern2; public Vector4 Lantern3;
         public Vector4 Lantern4; public Vector4 Lantern5; public Vector4 Lantern6; public Vector4 Lantern7;
-        public int LanternCount;
-        public float Time; 
-        private float p2; private float p3; 
+        public int LanternCount; public float Time; private float p2; private float p3; 
     }
 
     private static readonly Dictionary<char, string[]> Font = new() {
@@ -101,18 +108,59 @@ public class GameEngine
 
     public void ApplyGraphicsSettings()
     {
+        bool rebuildOffscreen = false;
+
         if (_device != null && _device.SyncToVerticalBlank != SystemConfig.VSync)
             _device.SyncToVerticalBlank = SystemConfig.VSync;
+
+        if (_window != null && _device != null)
+        {
+            if (_window.Width != SystemConfig.ResolutionWidth || _window.Height != SystemConfig.ResolutionHeight)
+            {
+                _window.Width = SystemConfig.ResolutionWidth;
+                _window.Height = SystemConfig.ResolutionHeight;
+                _device.MainSwapchain.Resize((uint)SystemConfig.ResolutionWidth, (uint)SystemConfig.ResolutionHeight);
+                rebuildOffscreen = true;
+            }
+            if (Math.Abs(_currentRenderScale - SystemConfig.RenderScale) > 0.01f)
+            {
+                _currentRenderScale = SystemConfig.RenderScale;
+                rebuildOffscreen = true;
+            }
+        }
+        
+        if (rebuildOffscreen) CreateOffscreenFramebuffer();
     }
 
     public void Initialize(string title, int width, int height, GraphicsBackend backend)
     {
-        _window = VeldridStartup.CreateWindow(new WindowCreateInfo { X = 0, Y = 0, WindowWidth = width, WindowHeight = height, WindowTitle = title, WindowInitialState = WindowState.FullScreen });
+        WindowCreateInfo windowCI = new WindowCreateInfo { X = 50, Y = 50, WindowWidth = width, WindowHeight = height, WindowTitle = title, WindowInitialState = WindowState.Normal };
+        _window = VeldridStartup.CreateWindow(ref windowCI);
         _device = VeldridStartup.CreateGraphicsDevice(_window, new GraphicsDeviceOptions { Debug = false, HasMainSwapchain = true, SyncToVerticalBlank = SystemConfig.VSync, PreferStandardClipSpaceYDirection = true, SwapchainDepthFormat = PixelFormat.D24_UNorm_S8_UInt }, backend);
         _commandList = _device.ResourceFactory.CreateCommandList();
+        _currentRenderScale = SystemConfig.RenderScale;
 
         LoadWallTexture();
         PrepareGraphicsPipeline();
+        CreateOffscreenFramebuffer();
+    }
+
+    private void CreateOffscreenFramebuffer()
+    {
+        if (_offscreenFB != null) {
+            _offscreenFB.Dispose(); _offscreenColor.Dispose(); _offscreenDepth.Dispose(); _offscreenColorView.Dispose(); _postResourceSet.Dispose();
+        }
+
+        uint w = (uint)(_window.Width * _currentRenderScale);
+        uint h = (uint)(_window.Height * _currentRenderScale);
+        if (w < 1) w = 1; if (h < 1) h = 1;
+
+        _offscreenColor = _device.ResourceFactory.CreateTexture(TextureDescription.Texture2D(w, h, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.RenderTarget | TextureUsage.Sampled));
+        _offscreenDepth = _device.ResourceFactory.CreateTexture(TextureDescription.Texture2D(w, h, 1, 1, PixelFormat.D24_UNorm_S8_UInt, TextureUsage.DepthStencil));
+        _offscreenFB = _device.ResourceFactory.CreateFramebuffer(new FramebufferDescription(_offscreenDepth, _offscreenColor));
+        _offscreenColorView = _device.ResourceFactory.CreateTextureView(_offscreenColor);
+
+        _postResourceSet = _device.ResourceFactory.CreateResourceSet(new ResourceSetDescription(_postResourceLayout, _offscreenColorView, _device.PointSampler));
     }
 
     private void LoadWallTexture()
@@ -136,37 +184,17 @@ public class GameEngine
     private void PrepareGraphicsPipeline()
     {
         ResourceFactory factory = _device.ResourceFactory;
-        Shader[] shaders;
-        Shader[] hudShaders;
+        Shader[] shaders; Shader[] hudShaders; Shader[] postShaders;
 
-        // 🔥 OMIJAMY LIBVELDRID-SPIRV ŁADUJĄC SKOMPILOWANE PLIKI
-        if (_device.BackendType == GraphicsBackend.Vulkan)
-        {
-            try
-            {
-                byte[] vertSpv = File.ReadAllBytes("Shaders/vertex.spv");
-                byte[] fragSpv = File.ReadAllBytes("Shaders/fragment.spv");
-                byte[] hudVertSpv = File.ReadAllBytes("Shaders/hud_vertex.spv");
-                byte[] hudFragSpv = File.ReadAllBytes("Shaders/hud_fragment.spv");
+        if (_device.BackendType != GraphicsBackend.Vulkan) throw new NotSupportedException("Wymagany Vulkan.");
 
-                shaders = new[] {
-                    factory.CreateShader(new ShaderDescription(ShaderStages.Vertex, vertSpv, "main")),
-                    factory.CreateShader(new ShaderDescription(ShaderStages.Fragment, fragSpv, "main"))
-                };
-                hudShaders = new[] {
-                    factory.CreateShader(new ShaderDescription(ShaderStages.Vertex, hudVertSpv, "main")),
-                    factory.CreateShader(new ShaderDescription(ShaderStages.Fragment, hudFragSpv, "main"))
-                };
-            }
-            catch (Exception ex)
-            {
-                throw new Exception("Błąd ładowania plików Vulkana na RPi4! Upewnij się, że uruchomiłeś skrypt CompileShaders.sh. Detale: " + ex.Message);
-            }
-        }
-        else
+        try
         {
-            throw new NotSupportedException("Silnik zoptymalizowany wyłącznie pod Vulkan (ARM64). Zmień backend w Program.cs.");
+            shaders = new[] { factory.CreateShader(new ShaderDescription(ShaderStages.Vertex, File.ReadAllBytes("Shaders/vertex.spv"), "main")), factory.CreateShader(new ShaderDescription(ShaderStages.Fragment, File.ReadAllBytes("Shaders/fragment.spv"), "main")) };
+            hudShaders = new[] { factory.CreateShader(new ShaderDescription(ShaderStages.Vertex, File.ReadAllBytes("Shaders/hud_vertex.spv"), "main")), factory.CreateShader(new ShaderDescription(ShaderStages.Fragment, File.ReadAllBytes("Shaders/hud_fragment.spv"), "main")) };
+            postShaders = new[] { factory.CreateShader(new ShaderDescription(ShaderStages.Vertex, File.ReadAllBytes("Shaders/post_vertex.spv"), "main")), factory.CreateShader(new ShaderDescription(ShaderStages.Fragment, File.ReadAllBytes("Shaders/post_fragment.spv"), "main")) };
         }
+        catch (Exception ex) { throw new Exception("Błąd Vulkana! Brak plików SPV. Uruchom skrypt CompileShaders.sh. " + ex.Message); }
 
         _vertexBuffer = factory.CreateBuffer(new BufferDescription(4000000, BufferUsage.VertexBuffer));
         _viewProjBuffer = factory.CreateBuffer(new BufferDescription(64, BufferUsage.UniformBuffer));
@@ -185,14 +213,26 @@ public class GameEngine
             BlendState = BlendStateDescription.SingleOverrideBlend, DepthStencilState = new DepthStencilStateDescription(true, true, ComparisonKind.LessEqual),
             RasterizerState = RasterizerStateDescription.CullNone, PrimitiveTopology = PrimitiveTopology.TriangleList, ResourceLayouts = new[] { resourceLayout },
             ShaderSet = new ShaderSetDescription(new[] { new VertexLayoutDescription(new VertexElementDescription("InsidePos", VertexElementSemantic.Position, VertexElementFormat.Float3, 0), new VertexElementDescription("InNormal", VertexElementSemantic.Normal, VertexElementFormat.Float3, 12), new VertexElementDescription("InUV", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float2, 24), new VertexElementDescription("InMatId", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float1, 32)) }, shaders),
-            Outputs = _device.MainSwapchain.Framebuffer.OutputDescription
+            // Wpinamy logikę w dynamiczny framebuffer!
+            Outputs = new OutputDescription(new OutputAttachmentDescription(PixelFormat.D24_UNorm_S8_UInt), new OutputAttachmentDescription(PixelFormat.R8_G8_B8_A8_UNorm))
         };
         _pipeline = factory.CreateGraphicsPipeline(ref pd);
 
+        _postResourceLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
+            new ResourceLayoutElementDescription("u_ScreenTex", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
+            new ResourceLayoutElementDescription("u_Sampler", ResourceKind.Sampler, ShaderStages.Fragment)
+        ));
+
+        GraphicsPipelineDescription postPd = new GraphicsPipelineDescription {
+            BlendState = BlendStateDescription.SingleOverrideBlend, DepthStencilState = DepthStencilStateDescription.Disabled, RasterizerState = RasterizerStateDescription.CullNone,
+            PrimitiveTopology = PrimitiveTopology.TriangleList, ResourceLayouts = new[] { _postResourceLayout },
+            ShaderSet = new ShaderSetDescription(Array.Empty<VertexLayoutDescription>(), postShaders), Outputs = _device.MainSwapchain.Framebuffer.OutputDescription
+        };
+        _postPipeline = factory.CreateGraphicsPipeline(ref postPd);
+
         GraphicsPipelineDescription hpd = new GraphicsPipelineDescription {
             BlendState = BlendStateDescription.SingleAlphaBlend, DepthStencilState = DepthStencilStateDescription.Disabled, RasterizerState = RasterizerStateDescription.CullNone, PrimitiveTopology = PrimitiveTopology.TriangleList, ResourceLayouts = Array.Empty<ResourceLayout>(),
-            ShaderSet = new ShaderSetDescription(new[] { new VertexLayoutDescription(new VertexElementDescription("InsidePos", VertexElementSemantic.Position, VertexElementFormat.Float2, 0), new VertexElementDescription("InColor", VertexElementSemantic.Color, VertexElementFormat.Float4, 8)) }, hudShaders),
-            Outputs = _device.MainSwapchain.Framebuffer.OutputDescription
+            ShaderSet = new ShaderSetDescription(new[] { new VertexLayoutDescription(new VertexElementDescription("InsidePos", VertexElementSemantic.Position, VertexElementFormat.Float2, 0), new VertexElementDescription("InColor", VertexElementSemantic.Color, VertexElementFormat.Float4, 8)) }, hudShaders), Outputs = _device.MainSwapchain.Framebuffer.OutputDescription
         };
         _hudPipeline = factory.CreateGraphicsPipeline(ref hpd);
         _hudVertexBuffer = factory.CreateBuffer(new BufferDescription(1000000, BufferUsage.VertexBuffer));
@@ -314,9 +354,12 @@ public class GameEngine
             _gpuDrawCallsCounter = 0; _gpuVerticesCounter = 0;
 
             _commandList.Begin();
-            _commandList.SetFramebuffer(_device.MainSwapchain.Framebuffer);
-            _commandList.SetViewport(0, new Viewport(0, 0, _window.Width, _window.Height, 0, 1));
-            _commandList.ClearColorTarget(0, ClearColor); _commandList.ClearDepthStencil(1f);
+
+            // 🔥 PRZEBIEG 1: Renderowanie 3D do tekstury mniejszej o wskaźnik RenderScale
+            _commandList.SetFramebuffer(_offscreenFB);
+            _commandList.SetViewport(0, new Viewport(0, 0, _offscreenFB.Width, _offscreenFB.Height, 0, 1));
+            _commandList.ClearColorTarget(0, ClearColor); 
+            _commandList.ClearDepthStencil(1f);
 
             Vector3 forward = new Vector3(MathF.Sin(CameraYaw) * MathF.Cos(CameraPitch), MathF.Sin(CameraPitch), -MathF.Cos(CameraYaw) * MathF.Cos(CameraPitch));
             CameraForward = forward;
@@ -332,9 +375,7 @@ public class GameEngine
 
             if (ShowGameplayHud)
             {
-                // 🔥 Skalowanie renderowania na podstawie wybranej jakości grafiki
                 float viewDist = SystemConfig.GraphicsQuality switch { 0 => 16f, 1 => 24f, 2 => 36f, _ => 24f };
-                
                 float fXStart = MathF.Floor(CameraPosition.X / 2f) * 2f - viewDist; float fXEnd = MathF.Floor(CameraPosition.X / 2f) * 2f + viewDist;
                 float fZStart = MathF.Floor(CameraPosition.Z / 2f) * 2f - viewDist; float fZEnd = MathF.Floor(CameraPosition.Z / 2f) * 2f + viewDist;
                 for (float x = fXStart; x <= fXEnd; x += 2f) {
@@ -352,7 +393,6 @@ public class GameEngine
             lightData.FlashlightDir = new Vector4(forward, TriggerMuzzleFlash ? 12.0f : 3.0f);
             lightData.Time = (float)currentTime; 
             
-            // 🔥 Obcinanie ilości oświetlenia dynamicznego na słabszych urządzeniach ARM
             int maxLanterns = SystemConfig.GraphicsQuality switch { 0 => 2, 1 => 4, 2 => 8, _ => 4 };
             lightData.LanternCount = Math.Min(_frameLanterns.Count, maxLanterns);
             
@@ -369,10 +409,7 @@ public class GameEngine
 
             if (_batchIndex > 0)
             {
-                fixed (float* ptr = _batchVertices)
-                {
-                    _commandList.UpdateBuffer(_vertexBuffer, 0, (IntPtr)ptr, (uint)(_batchIndex * sizeof(float)));
-                }
+                fixed (float* ptr = _batchVertices) { _commandList.UpdateBuffer(_vertexBuffer, 0, (IntPtr)ptr, (uint)(_batchIndex * sizeof(float))); }
                 _commandList.SetPipeline(_pipeline);
                 _commandList.SetGraphicsResourceSet(0, _resourceSet);
                 _commandList.SetVertexBuffer(0, _vertexBuffer);
@@ -380,6 +417,16 @@ public class GameEngine
                 _gpuDrawCallsCounter++;
             }
 
+            // 🔥 PRZEBIEG 2: Wyciągamy Off-screen Texture, nakładamy wyostrzenie splotowe (Sharpen) i skalujemy na MainSwapchain
+            _commandList.SetFramebuffer(_device.MainSwapchain.Framebuffer);
+            _commandList.SetViewport(0, new Viewport(0, 0, _window.Width, _window.Height, 0, 1));
+            _commandList.ClearColorTarget(0, RgbaFloat.Black);
+
+            _commandList.SetPipeline(_postPipeline);
+            _commandList.SetGraphicsResourceSet(0, _postResourceSet);
+            _commandList.Draw(3); // 3 wierzchołki trójkąta wypełniającego ekran wygenerowane logicznie w Shaderze
+
+            // 🔥 PRZEBIEG 3: HUD 2D (Renderowany w natywnej rozdzielczości ekranu bez rozmycia!)
             _hudBatchIndex = 0;
             RgbaFloat matrixGreen = new RgbaFloat(0.0f, 1.0f, 0.2f, 1.0f);
             RgbaFloat darkGreenBar = new RgbaFloat(0.0f, 0.25f, 0.05f, 1.0f);
@@ -417,10 +464,7 @@ public class GameEngine
 
             if (_hudBatchIndex > 0)
             {
-                fixed (float* ptr = _hudBatchVertices)
-                {
-                    _commandList.UpdateBuffer(_hudVertexBuffer, 0, (IntPtr)ptr, (uint)(_hudBatchIndex * sizeof(float)));
-                }
+                fixed (float* ptr = _hudBatchVertices) { _commandList.UpdateBuffer(_hudVertexBuffer, 0, (IntPtr)ptr, (uint)(_hudBatchIndex * sizeof(float))); }
                 _commandList.SetPipeline(_hudPipeline);
                 _commandList.SetVertexBuffer(0, _hudVertexBuffer);
                 _commandList.Draw((uint)(_hudBatchIndex / 6)); 
@@ -431,8 +475,9 @@ public class GameEngine
             TriggerMuzzleFlash = false;
         }
 
+        if (_offscreenFB != null) { _offscreenFB.Dispose(); _offscreenColor.Dispose(); _offscreenDepth.Dispose(); _offscreenColorView.Dispose(); _postResourceSet.Dispose(); }
         _wallTexture.Dispose(); _wallTextureView.Dispose(); _sampler.Dispose();
         _vertexBuffer.Dispose(); _viewProjBuffer.Dispose(); _lightBuffer.Dispose(); 
-        _hudVertexBuffer.Dispose(); _hudPipeline.Dispose(); _pipeline.Dispose(); _commandList.Dispose(); _device.Dispose();
+        _hudVertexBuffer.Dispose(); _hudPipeline.Dispose(); _pipeline.Dispose(); _postPipeline.Dispose(); _commandList.Dispose(); _device.Dispose();
     }
 }
