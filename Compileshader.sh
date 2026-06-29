@@ -71,16 +71,45 @@ cat << 'EOF' > post_fragment.frag
 layout(location = 0) in vec2 v_UV;
 layout(set = 0, binding = 0) uniform texture2D u_ScreenTex;
 layout(set = 0, binding = 1) uniform sampler u_Sampler;
+
+// Bind 2 to SettingsBuffer
+layout(set = 0, binding = 2) uniform GraphicsSettingsBlock {
+    float RenderScale; 
+    int Bloom; 
+    int MotionBlur; 
+    float BlurIntensity;
+    int Shadows; 
+    int AntiAliasing; 
+    int AO;
+    float DrawDistance;
+} settings;
+
 layout(location = 0) out vec4 FragColor;
+
 void main() {
+    vec3 col = texture(sampler2D(u_ScreenTex, u_Sampler), v_UV).rgb;
+
+    if (settings.Bloom == 1){
+        vec3 bloom = vec3(0.0);
+        float threshold = 0.7;
+        vec2 texelSize = 1.0/ textureSize(sampler2D(u_ScreenTex, u_Sampler),0);
+        for(int x=-1; x<=1; x++){
+            for(int y=-1; y<=1; y++){
+                vec3 sampleColor = texture(sampler2D(u_ScreenTex, u_Sampler), v_UV + vec2(x,y) * texelSize * settings.BlurIntensity).rgb;
+                float brightness = dot(sampleColor, vec3(0.2126, 0.7152, 0.0722));
+                if(brightness> threshold){
+                    bloom += sampleColor;
+                }
+            }
+        }
+        col += (bloom / 9.0) * 0.8;
+    }    
+
+    // Wyostrzanie (Sharpening) - zawsze włączone po skalowaniu
     vec2 texelSize = 1.0 / textureSize(sampler2D(u_ScreenTex, u_Sampler), 0);
-    // Filtr Splotowy (Kernel Sharpening)
-    vec3 col = texture(sampler2D(u_ScreenTex, u_Sampler), v_UV).rgb * 5.0;
-    col -= texture(sampler2D(u_ScreenTex, u_Sampler), v_UV + vec2(texelSize.x, 0)).rgb;
-    col -= texture(sampler2D(u_ScreenTex, u_Sampler), v_UV - vec2(texelSize.x, 0)).rgb;
-    col -= texture(sampler2D(u_ScreenTex, u_Sampler), v_UV + vec2(0, texelSize.y)).rgb;
-    col -= texture(sampler2D(u_ScreenTex, u_Sampler), v_UV - vec2(0, texelSize.y)).rgb;
-    FragColor = vec4(max(col, 0.0), 1.0);
+    col += (col - texture(sampler2D(u_ScreenTex, u_Sampler), v_UV + texelSize).rgb) * 0.3;
+
+    FragColor = vec4(col, 1.0);
 }
 EOF
 
@@ -91,3 +120,5 @@ glslangValidator -V hud_fragment.frag -o hud_fragment.spv
 glslangValidator -V post_vertex.vert -o post_vertex.spv
 glslangValidator -V post_fragment.frag -o post_fragment.spv
 echo "Binarne pliki SPIR-V wygenerowane poprawnie."
+cd ../
+cp -vu Shaders/* bin/Debug/net11.0/Shaders/

@@ -13,6 +13,7 @@ using Veldrid.StartupUtilities;
 using CyberEngine.Entities;
 using CyberEngine.Core;
 using CyberEngine.Scenes;
+using System.Runtime.InteropServices;
 
 namespace CyberEngine;
 
@@ -83,6 +84,7 @@ public class GameEngine
     public RgbaFloat ClearColor { get; set; } = RgbaFloat.Black; 
     public string GpuName => _device.DeviceName;
 
+
     public void LoadScene(Scene scene) { _nextScene = scene; }
 
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
@@ -94,6 +96,19 @@ public class GameEngine
         public Vector4 Lantern4; public Vector4 Lantern5; public Vector4 Lantern6; public Vector4 Lantern7;
         public int LanternCount; public float Time; private float p2; private float p3; 
     }
+    [StructLayout(LayoutKind.Sequential)]
+public struct GraphicsSettingsBlock {
+    public float RenderScale;
+    public int Bloom; 
+    public int MotionBlur; 
+    public float BlurIntensity;
+    public int Shadows;
+    public int AntiAliasing;
+    public int AO;
+    public float DrawDistance; // Teraz jest
+}
+
+private DeviceBuffer _settingsBuffer;
 
     private static readonly Dictionary<char, string[]> Font = new() {
         ['0']=["███","█ █","█ █","█ █","███"], ['1']=["  █","  █","  █","  █","  █"], ['2']=["███","  █","███","█  ","███"], ['3']=["███","  █","███","  █","███"],
@@ -107,6 +122,22 @@ public class GameEngine
         ['D']=["██ ","█ █","█ █","█ █","██ "], ['K']=["█ █","█ █","██ ","█ █","█ █"], ['O']=["███","█ █","█ █","█ █","███"], ['Z']=["███","  █"," █ ","█  ","███"],
         ['Y']=["█ █","█ █","███","  █","███"], ['>']=["█  "," █ ","  █"," █ ","█  "], ['-']=["   ","   ","███","   ","   "], ['J']=["  █","  █","  █","█ █","███"]
     };
+    public void UpdateSettingsBuffer()
+{
+    // Mapowanie C# -> Struktura GPU
+    GraphicsSettingsBlock settings = new GraphicsSettingsBlock {
+        RenderScale = SystemConfig.RenderScale,
+        Bloom = SystemConfig.BloomEnabled ? 1 : 0,
+        MotionBlur = SystemConfig.MotionBlurIntensity > 0 ? 1 : 0,
+        BlurIntensity = SystemConfig.MotionBlurIntensity,
+        Shadows = SystemConfig.ShadowsEnabled ? 1 : 0,
+        AntiAliasing = SystemConfig.AntiAliasingMode,
+        AO = SystemConfig.AmbientOcclusionEnabled ? 1 : 0,
+        DrawDistance = SystemConfig.DrawDistance
+    };
+    // Używamy UpdateBuffer (to jest metoda Veldrid, która bezpiecznie nadpisuje dane w już istniejącym buforze)
+    _commandList.UpdateBuffer(_settingsBuffer, 0, settings);
+}
 
     public void ApplyGraphicsSettings()
     {
@@ -139,7 +170,9 @@ public class GameEngine
         _device = VeldridStartup.CreateGraphicsDevice(_window, new GraphicsDeviceOptions { Debug = false, HasMainSwapchain = true, SyncToVerticalBlank = SystemConfig.VSync, PreferStandardClipSpaceYDirection = true, SwapchainDepthFormat = PixelFormat.D24_UNorm_S8_UInt }, backend);
         _commandList = _device.ResourceFactory.CreateCommandList();
         _currentRenderScale = SystemConfig.RenderScale;
-
+        uint size = (uint)Marshal.SizeOf<GraphicsSettingsBlock>();
+        _settingsBuffer = _device.ResourceFactory.CreateBuffer(new BufferDescription(size, BufferUsage.UniformBuffer));
+        Console.WriteLine(size);
         LoadWallTexture();
         PrepareGraphicsPipeline();
         CreateOffscreenFramebuffer();
@@ -160,7 +193,7 @@ public class GameEngine
         _offscreenFB = _device.ResourceFactory.CreateFramebuffer(new FramebufferDescription(_offscreenDepth, _offscreenColor));
         _offscreenColorView = _device.ResourceFactory.CreateTextureView(_offscreenColor);
 
-        _postResourceSet = _device.ResourceFactory.CreateResourceSet(new ResourceSetDescription(_postResourceLayout, _offscreenColorView, _device.LinearSampler));
+        _postResourceSet = _device.ResourceFactory.CreateResourceSet(new ResourceSetDescription(_postResourceLayout, _offscreenColorView, _device.LinearSampler,_settingsBuffer));
     }
 
     private void LoadWallTexture()
@@ -192,6 +225,7 @@ public class GameEngine
         {
             // Bezpieczne kotwiczenie ścieżek dla skompilowanego pliku binarnego
             string baseDir = AppContext.BaseDirectory;
+            Console.WriteLine(baseDir);
             byte[] vertSpv = File.ReadAllBytes(Path.Combine(baseDir, "Shaders", "vertex.spv"));
             byte[] fragSpv = File.ReadAllBytes(Path.Combine(baseDir, "Shaders", "fragment.spv"));
             byte[] hudVertSpv = File.ReadAllBytes(Path.Combine(baseDir, "Shaders", "hud_vertex.spv"));
@@ -237,7 +271,8 @@ public class GameEngine
 
         _postResourceLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
             new ResourceLayoutElementDescription("u_ScreenTex", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
-            new ResourceLayoutElementDescription("u_Sampler", ResourceKind.Sampler, ShaderStages.Fragment)
+            new ResourceLayoutElementDescription("u_Sampler", ResourceKind.Sampler, ShaderStages.Fragment),
+            new ResourceLayoutElementDescription("GraphicsSettingsBlock",ResourceKind.UniformBuffer,ShaderStages.Fragment)
         ));
 
         GraphicsPipelineDescription postPd = new GraphicsPipelineDescription {
@@ -375,6 +410,7 @@ public class GameEngine
             _gpuDrawCallsCounter = 0; _gpuVerticesCounter = 0;
 
             _commandList.Begin();
+            UpdateSettingsBuffer();
 
             // 🔥 PRZEBIEG 1: Renderowanie 3D do tekstury mniejszej o wskaźnik RenderScale
             _commandList.SetFramebuffer(_offscreenFB);
