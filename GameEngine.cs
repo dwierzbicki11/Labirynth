@@ -160,7 +160,7 @@ public class GameEngine
         _offscreenFB = _device.ResourceFactory.CreateFramebuffer(new FramebufferDescription(_offscreenDepth, _offscreenColor));
         _offscreenColorView = _device.ResourceFactory.CreateTextureView(_offscreenColor);
 
-        _postResourceSet = _device.ResourceFactory.CreateResourceSet(new ResourceSetDescription(_postResourceLayout, _offscreenColorView, _device.PointSampler));
+        _postResourceSet = _device.ResourceFactory.CreateResourceSet(new ResourceSetDescription(_postResourceLayout, _offscreenColorView, _device.LinearSampler));
     }
 
     private void LoadWallTexture()
