@@ -2,9 +2,16 @@
 layout(location = 0) in vec2 v_UV;
 layout(set = 0, binding = 0) uniform texture2D u_ScreenTex;
 layout(set = 0, binding = 1) uniform sampler u_Sampler;
+
+// Bind 2 to SettingsBuffer
 layout(set = 0, binding = 2) uniform GraphicsSettingsBlock {
-    float RenderScale; int Bloom; int MotionBlur; float BlurIntensity;
-    int Shadows; int AntiAliasing; int AO;
+    float RenderScale; 
+    int Bloom; 
+    int MotionBlur; 
+    float BlurIntensity;
+    int Shadows; 
+    int AntiAliasing; 
+    int AO;
 } settings;
 
 layout(location = 0) out vec4 FragColor;
