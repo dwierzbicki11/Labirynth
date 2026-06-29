@@ -1,27 +1,25 @@
-﻿using System;
+using System;
 using Veldrid;
 using CyberEngine;
 using CyberEngine.Scenes;
-using CyberEngine.Scene;
+using CyberEngine.Core;
 
-Console.WriteLine("[CyberEngine] Inicjalizacja FSM...");
+Console.WriteLine("[CyberEngine] Inicjalizacja podsystemu VULKAN na układzie ARM64...");
 
 try
 {
     SystemConfig.Load();
-    // Dla środowiska RPi4 domyślnie OpenGLES/OpenGL
-    GraphicsBackend api = GraphicsBackend.OpenGL; 
+
+    // 🔥 Twarde wymuszenie protokołu Vulkan
+    GraphicsBackend api = GraphicsBackend.Vulkan; 
     
     GameEngine engine = new GameEngine();
     engine.Initialize("CyberEngine - Matrix Core", 1280, 720, api);
     
-    // Załadowanie maszyny stanów (Ekranu Głównego)
     engine.LoadScene(new MainMenuScene());
-    
-    // Odpalenie silnika 
     engine.Run();
 }
 catch(Exception ex)
 { 
-    Console.WriteLine($"KRYTYCZNY BLAD: {ex.Message}"); 
+    Console.WriteLine($"KRYTYCZNY BŁĄD SYSTEMU: {ex.Message}"); 
 }
