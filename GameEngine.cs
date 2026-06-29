@@ -33,7 +33,7 @@ public class GameEngine
 
     private Pipeline _hudPipeline = null!;
     private DeviceBuffer _hudVertexBuffer = null!;
-    private readonly float[] _hudBatchVertices = new float[100000];
+    private readonly float[] _hudBatchVertices = new float[500000];
     private int _hudBatchIndex = 0;
 
     // 🔥 NOWE: Zmienne potoku Post-Process i Off-screen
@@ -45,6 +45,8 @@ public class GameEngine
     private TextureView _offscreenColorView = null!;
     private ResourceSet _postResourceSet = null!;
     private float _currentRenderScale = 1.0f;
+    private int _currentResW=1280;
+    private int _currentResH=720;
 
     private Texture _wallTexture = null!;
     private TextureView _wallTextureView = null!;
@@ -76,8 +78,8 @@ public class GameEngine
     public Vector2 MouseDelta { get; private set; } = Vector2.Zero;
     public bool TriggerMuzzleFlash { get; set; } = false;
 
-    public float Width => _window.Width;
-    public float Height => _window.Height;
+    public float Width => SystemConfig.ResolutionHeight;
+    public float Height => SystemConfig.ResolutionHeight;
     public RgbaFloat ClearColor { get; set; } = RgbaFloat.Black; 
     public string GpuName => _device.DeviceName;
 
@@ -113,14 +115,12 @@ public class GameEngine
         if (_device != null && _device.SyncToVerticalBlank != SystemConfig.VSync)
             _device.SyncToVerticalBlank = SystemConfig.VSync;
 
-        if (_window != null && _device != null)
+        if ( _device != null)
         {
-            if (_window.Width != SystemConfig.ResolutionWidth || _window.Height != SystemConfig.ResolutionHeight)
+            if(_currentResW != SystemConfig.ResolutionWidth || _currentResH != SystemConfig.ResolutionHeight)
             {
-                _window.Width = SystemConfig.ResolutionWidth;
-                _window.Height = SystemConfig.ResolutionHeight;
-                _device.MainSwapchain.Resize((uint)SystemConfig.ResolutionWidth, (uint)SystemConfig.ResolutionHeight);
-                rebuildOffscreen = true;
+                _currentResW = SystemConfig.ResolutionWidth;
+                _currentResH = SystemConfig.ResolutionHeight;
             }
             if (Math.Abs(_currentRenderScale - SystemConfig.RenderScale) > 0.01f)
             {
@@ -134,7 +134,7 @@ public class GameEngine
 
     public void Initialize(string title, int width, int height, GraphicsBackend backend)
     {
-        WindowCreateInfo windowCI = new WindowCreateInfo { X = 50, Y = 50, WindowWidth = width, WindowHeight = height, WindowTitle = title, WindowInitialState = WindowState.Normal };
+        WindowCreateInfo windowCI = new WindowCreateInfo { X = 0, Y = 0, WindowWidth = width, WindowHeight = height, WindowTitle = title, WindowInitialState = WindowState.FullScreen };
         _window = VeldridStartup.CreateWindow(ref windowCI);
         _device = VeldridStartup.CreateGraphicsDevice(_window, new GraphicsDeviceOptions { Debug = false, HasMainSwapchain = true, SyncToVerticalBlank = SystemConfig.VSync, PreferStandardClipSpaceYDirection = true, SwapchainDepthFormat = PixelFormat.D24_UNorm_S8_UInt }, backend);
         _commandList = _device.ResourceFactory.CreateCommandList();
@@ -151,8 +151,8 @@ public class GameEngine
             _offscreenFB.Dispose(); _offscreenColor.Dispose(); _offscreenDepth.Dispose(); _offscreenColorView.Dispose(); _postResourceSet.Dispose();
         }
 
-        uint w = (uint)(_window.Width * _currentRenderScale);
-        uint h = (uint)(_window.Height * _currentRenderScale);
+        uint w = (uint)(SystemConfig.ResolutionWidth * _currentRenderScale);
+        uint h = (uint)(SystemConfig.ResolutionHeight * _currentRenderScale);
         if (w < 1) w = 1; if (h < 1) h = 1;
 
         _offscreenColor = _device.ResourceFactory.CreateTexture(TextureDescription.Texture2D(w, h, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.RenderTarget | TextureUsage.Sampled));
@@ -196,7 +196,7 @@ public class GameEngine
         }
         catch (Exception ex) { throw new Exception("Błąd Vulkana! Brak plików SPV. Uruchom skrypt CompileShaders.sh. " + ex.Message); }
 
-        _vertexBuffer = factory.CreateBuffer(new BufferDescription(4000000, BufferUsage.VertexBuffer));
+        _vertexBuffer = factory.CreateBuffer(new BufferDescription(8000000, BufferUsage.VertexBuffer));
         _viewProjBuffer = factory.CreateBuffer(new BufferDescription(64, BufferUsage.UniformBuffer));
         _lightBuffer = factory.CreateBuffer(new BufferDescription(176, BufferUsage.UniformBuffer)); 
 
@@ -235,7 +235,7 @@ public class GameEngine
             ShaderSet = new ShaderSetDescription(new[] { new VertexLayoutDescription(new VertexElementDescription("InsidePos", VertexElementSemantic.Position, VertexElementFormat.Float2, 0), new VertexElementDescription("InColor", VertexElementSemantic.Color, VertexElementFormat.Float4, 8)) }, hudShaders), Outputs = _device.MainSwapchain.Framebuffer.OutputDescription
         };
         _hudPipeline = factory.CreateGraphicsPipeline(ref hpd);
-        _hudVertexBuffer = factory.CreateBuffer(new BufferDescription(1000000, BufferUsage.VertexBuffer));
+        _hudVertexBuffer = factory.CreateBuffer(new BufferDescription(2000000, BufferUsage.VertexBuffer));
     }
 
     public void RegisterLantern(Vector3 position) { _frameLanterns.Add(position); }
@@ -284,10 +284,14 @@ public class GameEngine
 
     public void DrawHudRectangle(float screenX, float screenY, float width, float height, RgbaFloat color)
     {
-        float left = (screenX / _window.Width) * 2f - 1f; float right = left + (width / _window.Width) * 2f;
-        float top = 1f - (screenY / _window.Height) * 2f; float bottom = top - (height / _window.Height) * 2f;
-        AddHudVertex(left, top, color); AddHudVertex(left, bottom, color); AddHudVertex(right, top, color);
-        AddHudVertex(right, top, color); AddHudVertex(left, bottom, color); AddHudVertex(right, bottom, color);
+        float left = (screenX / SystemConfig.ResolutionWidth) * 2f - 1f; 
+        float right = left + (width / SystemConfig.ResolutionWidth) * 2f;
+        float top = 1f - (screenY / SystemConfig.ResolutionHeight) * 2f; 
+        float bottom = top - (height / SystemConfig.ResolutionHeight) * 2f;
+        AddHudVertex(left, top, color); AddHudVertex(left, bottom, color); 
+        AddHudVertex(right, top, color);
+        AddHudVertex(right, top, color); AddHudVertex(left, bottom, color); 
+        AddHudVertex(right, bottom, color);
     }
 
     public void DrawHudText(string text, float startX, float startY, float pixelSize, RgbaFloat color)

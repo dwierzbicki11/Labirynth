@@ -42,7 +42,7 @@ public class GameScene : Scene
 
         float czuloscMyszy = SystemConfig.MouseSensitivity;
         _player.Yaw += engine.MouseDelta.X * czuloscMyszy;
-        _player.Pitch -= engine.MouseDelta.Y * czuloscMyszy;
+        _player.Pitch += engine.MouseDelta.Y * czuloscMyszy;
         _player.Pitch = Math.Clamp(_player.Pitch, -1.4f, 1.4f);
 
         engine.CameraYaw = _player.Yaw;
