@@ -11,8 +11,8 @@ public abstract class Scene
     public virtual void OnLoad(GameEngine engine) { }
     public virtual void OnUpdate(double deltaTime, InputSnapshot snapshot, GameEngine engine) { }
     public virtual void OnRenderUI(GameEngine engine) { }
-    public virtual void OnUnload(GameEngine engine) 
-    { 
+    public virtual void OnUnload(GameEngine engine)
+    {
         GameObjects.Clear();
     }
 }

@@ -9,7 +9,7 @@ public class MainMenuScene : Scene
 {
     private readonly RgbaFloat _matrixGreen = new RgbaFloat(0.0f, 1.0f, 0.2f, 1.0f);
     private readonly RgbaFloat _white = new RgbaFloat(1.0f, 1.0f, 1.0f, 1.0f);
-    private int _selectedIndex = 0; 
+    private int _selectedIndex = 0;
 
     public override void OnLoad(GameEngine engine)
     {
@@ -41,7 +41,7 @@ public class MainMenuScene : Scene
         float midY = engine.Height / 2f;
 
         engine.DrawHudText("CYBER ENGINE BOOTLOADER", midX - 250, midY - 120, 4f, _matrixGreen);
-        
+
         RgbaFloat c0 = _selectedIndex == 0 ? _white : _matrixGreen;
         RgbaFloat c1 = _selectedIndex == 1 ? _white : _matrixGreen;
         RgbaFloat c2 = _selectedIndex == 2 ? _white : _matrixGreen;

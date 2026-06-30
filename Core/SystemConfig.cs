@@ -60,27 +60,39 @@ public static class SystemConfig
 
     public static void Save()
     {
-        try 
+        try
         {
-            var dto = new ConfigDto { 
-                VSync = VSync, FpsLimit = FpsLimit, RenderScale = RenderScale, 
-                GraphicsQuality = GraphicsQuality, ShadowsEnabled = ShadowsEnabled, 
-                AnisotropicFiltering = AnisotropicFiltering, DrawDistance = DrawDistance, 
-                MotionBlurIntensity = MotionBlurIntensity, DepthOfFieldEnabled = DepthOfFieldEnabled, 
-                BloomEnabled = BloomEnabled, AmbientOcclusionEnabled = AmbientOcclusionEnabled, 
-                AntiAliasingMode = AntiAliasingMode, ResolutionWidth = ResolutionWidth, 
-                ResolutionHeight = ResolutionHeight, Fov = Fov, MasterVolume = MasterVolume, 
-                SfxVolume = SfxVolume, MouseSensitivity = MouseSensitivity,HardwareUpscale = HardwareUpscale
+            var dto = new ConfigDto
+            {
+                VSync = VSync,
+                FpsLimit = FpsLimit,
+                RenderScale = RenderScale,
+                GraphicsQuality = GraphicsQuality,
+                ShadowsEnabled = ShadowsEnabled,
+                AnisotropicFiltering = AnisotropicFiltering,
+                DrawDistance = DrawDistance,
+                MotionBlurIntensity = MotionBlurIntensity,
+                DepthOfFieldEnabled = DepthOfFieldEnabled,
+                BloomEnabled = BloomEnabled,
+                AmbientOcclusionEnabled = AmbientOcclusionEnabled,
+                AntiAliasingMode = AntiAliasingMode,
+                ResolutionWidth = ResolutionWidth,
+                ResolutionHeight = ResolutionHeight,
+                Fov = Fov,
+                MasterVolume = MasterVolume,
+                SfxVolume = SfxVolume,
+                MouseSensitivity = MouseSensitivity,
+                HardwareUpscale = HardwareUpscale
             };
             File.WriteAllText(ConfigPath, JsonSerializer.Serialize(dto, new JsonSerializerOptions { WriteIndented = true }));
-        } 
+        }
         catch (Exception ex) { Console.WriteLine($"Blad zapisu configu: {ex.Message}"); }
     }
 
     public static void Load()
     {
         if (!File.Exists(ConfigPath)) { Save(); return; }
-        try 
+        try
         {
             var dto = JsonSerializer.Deserialize<ConfigDto>(File.ReadAllText(ConfigPath));
             if (dto != null)
@@ -92,9 +104,9 @@ public static class SystemConfig
                 BloomEnabled = dto.BloomEnabled; AmbientOcclusionEnabled = dto.AmbientOcclusionEnabled;
                 AntiAliasingMode = dto.AntiAliasingMode; ResolutionWidth = dto.ResolutionWidth;
                 ResolutionHeight = dto.ResolutionHeight; Fov = dto.Fov; MasterVolume = dto.MasterVolume;
-                SfxVolume = dto.SfxVolume; MouseSensitivity = dto.MouseSensitivity;HardwareUpscale = dto.HardwareUpscale;
+                SfxVolume = dto.SfxVolume; MouseSensitivity = dto.MouseSensitivity; HardwareUpscale = dto.HardwareUpscale;
             }
-        } 
+        }
         catch (Exception ex) { Console.WriteLine($"Blad odczytu configu: {ex.Message}"); }
     }
 }

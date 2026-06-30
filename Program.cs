@@ -11,15 +11,18 @@ try
     SystemConfig.Load();
 
     // 🔥 Twarde wymuszenie protokołu Vulkan
-    GraphicsBackend api = GraphicsBackend.Vulkan; 
-    
+    GraphicsBackend api = GraphicsBackend.Vulkan;
+
     GameEngine engine = new GameEngine();
     engine.Initialize("CyberEngine - Matrix Core", 1280, 720, api);
-    
+
     engine.LoadScene(new MainMenuScene());
     engine.Run();
 }
-catch(Exception ex)
-{ 
-    Console.WriteLine($"KRYTYCZNY BŁĄD SYSTEMU: {ex.Message}"); 
+catch (Exception ex)
+{
+    Console.WriteLine($"KRYTYCZNY BŁĄD SYSTEMU: {ex.Message}");
+    Console.WriteLine($"Stack Trace: {ex.StackTrace}");
+    if (ex.InnerException != null)
+        Console.WriteLine($"Inner Exception: {ex.InnerException.Message}");
 }

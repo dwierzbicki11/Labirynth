@@ -12,8 +12,8 @@ public class GameScene : Scene
     private Player _player = null!;
     private readonly HashSet<Key> _trzymaneKlawisze = new();
     private readonly Dictionary<(int x, int z), List<Wall>> _zaladowaneChunki = new();
-    
-    private readonly float _cellSize = 2.0f; 
+
+    private readonly float _cellSize = 2.0f;
 
     public override void OnLoad(GameEngine engine)
     {
@@ -30,7 +30,7 @@ public class GameScene : Scene
         bool czyStrzelonoWTejKlatce = false;
         foreach (KeyEvent keyEvent in snapshot.KeyEvents)
         {
-            if (keyEvent.Down) 
+            if (keyEvent.Down)
             {
                 _trzymaneKlawisze.Add(keyEvent.Key);
                 if (keyEvent.Key == Key.Space) czyStrzelonoWTejKlatce = true;
@@ -53,13 +53,13 @@ public class GameScene : Scene
 
         if (czyStrzelonoWTejKlatce && _player.ShootCooldown <= 0f && _player.Energy > 0)
         {
-            _player.ShootCooldown = 0.15f; 
-            _player.WeaponRecoil = 0.25f;  
-            _player.Energy -= 5;           
+            _player.ShootCooldown = 0.15f;
+            _player.WeaponRecoil = 0.25f;
+            _player.Energy -= 5;
             if (_player.Energy < 0) _player.Energy = 0;
-            engine.TriggerMuzzleFlash = true; 
+            engine.TriggerMuzzleFlash = true;
 
-            GameObjects.Add(new Laser(_player.Transform.Position, engine.CameraForward)); 
+            GameObjects.Add(new Laser(_player.Transform.Position, engine.CameraForward));
         }
 
         if (!_trzymaneKlawisze.Contains(Key.Space) && _player.Energy < 100) _player.Energy += 1;
@@ -67,7 +67,7 @@ public class GameScene : Scene
         Vector3 forward = new Vector3(MathF.Sin(_player.Yaw), 0f, -MathF.Cos(_player.Yaw));
         Vector3 right = new Vector3(MathF.Cos(_player.Yaw), 0f, MathF.Sin(_player.Yaw));
         Vector3 kierunekRuchu = Vector3.Zero;
-        
+
         if (_trzymaneKlawisze.Contains(Key.W)) kierunekRuchu += forward;
         if (_trzymaneKlawisze.Contains(Key.S)) kierunekRuchu -= forward;
         if (_trzymaneKlawisze.Contains(Key.A)) kierunekRuchu -= right;
@@ -143,7 +143,7 @@ public class GameScene : Scene
                     {
                         float ldx = laser.Transform.Position.X - wall.Transform.Position.X;
                         float ldz = laser.Transform.Position.Z - wall.Transform.Position.Z;
-                        if ((ldx * ldx + ldz * ldz) < ((laser.Radius + wall.Radius) * (laser.Radius + wall.Radius))) 
+                        if ((ldx * ldx + ldz * ldz) < ((laser.Radius + wall.Radius) * (laser.Radius + wall.Radius)))
                             laser.Destroy();
                     }
                 }
@@ -169,11 +169,13 @@ public class GameScene : Scene
             if (curr.z - 2 > 0 && grid[curr.x, curr.z - 2]) neighbors.Add((curr.x, curr.z - 2));
             if (curr.z + 2 < size - 1 && grid[curr.x, curr.z + 2]) neighbors.Add((curr.x, curr.z + 2));
 
-            if (neighbors.Count > 0) {
+            if (neighbors.Count > 0)
+            {
                 var next = neighbors[rng.Next(neighbors.Count)];
                 grid[curr.x + (next.x - curr.x) / 2, curr.z + (next.z - curr.z) / 2] = false;
                 grid[next.x, next.z] = false; stack.Push(next);
-            } else stack.Pop();
+            }
+            else stack.Pop();
         }
 
         int mid = size / 2;

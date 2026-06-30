@@ -24,7 +24,6 @@ public static class Message
         Console.Write(msg);
         Console.ForegroundColor = ConsoleColor.White;
         Console.WriteLine();
-    
     }
     public static void info(string msg)
     {

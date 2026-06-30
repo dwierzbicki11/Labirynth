@@ -10,11 +10,11 @@ public class SettingsScene : Scene
     private readonly RgbaFloat _white = new RgbaFloat(1.0f, 1.0f, 1.0f, 1.0f);
     private int _selectedIndex = 0;
     private int _currentTab = 0;
-    
+
     private readonly string[] _tabs = { "PODSTAWOWE", "GEOMETRIA", "POST-PROCESSING" };
-    
-    private readonly (int W, int H)[] _resolutions = { 
-        (800, 600), (1024, 768), (1280, 720), (1366, 768), (1600, 900), (1920, 1080) 
+
+    private readonly (int W, int H)[] _resolutions = {
+        (800, 600), (1024, 768), (1280, 720), (1366, 768), (1600, 900), (1920, 1080)
     };
 
     public override void OnLoad(GameEngine engine)
@@ -32,15 +32,19 @@ public class SettingsScene : Scene
                 if (k.Key == Key.Escape) { SystemConfig.Save(); engine.LoadScene(new MainMenuScene()); }
                 else if (k.Key == Key.W || k.Key == Key.Up) _selectedIndex = Math.Max(0, _selectedIndex - 1);
                 else if (k.Key == Key.S || k.Key == Key.Down) _selectedIndex = Math.Min(GetTabItemCount() - 1, _selectedIndex + 1);
-                else if (k.Key == Key.A || k.Key == Key.Left) { if(_currentTab > 0) { _currentTab--; _selectedIndex = 0; }  }
-                else if (k.Key == Key.D || k.Key == Key.Right) { 
-                    if(_currentTab < _tabs.Length - 1) { 
-                        _currentTab++; _selectedIndex = 0; } 
-                    else AdjustValue(1);
+                else if (k.Key == Key.A || k.Key == Key.Left) { if (_currentTab > 0) { _currentTab--; _selectedIndex = 0; } }
+                else if (k.Key == Key.D || k.Key == Key.Right)
+                {
+                    if (_currentTab < _tabs.Length - 1)
+                    {
+                        _currentTab++; _selectedIndex = 0;
                     }
-                else {
-                    if(k.Key == Key.Enter) AdjustValue(1); 
-                    else if(k.Key==Key.LShift)AdjustValue(-1);
+                    else AdjustValue(1);
+                }
+                else
+                {
+                    if (k.Key == Key.Enter) AdjustValue(1);
+                    else if (k.Key == Key.LShift) AdjustValue(-1);
                 }
             }
         }
@@ -53,7 +57,7 @@ public class SettingsScene : Scene
     {
         for (int i = 0; i < _resolutions.Length; i++)
             if (_resolutions[i].W == SystemConfig.ResolutionWidth && _resolutions[i].H == SystemConfig.ResolutionHeight) return i;
-        return 2; 
+        return 2;
     }
 
     private void AdjustValue(int direction)
@@ -62,8 +66,9 @@ public class SettingsScene : Scene
         {
             switch (_selectedIndex)
             {
-                case 0: int idx = Math.Clamp(GetResIndex() + direction, 0, _resolutions.Length - 1);
-                        SystemConfig.ResolutionWidth = _resolutions[idx].W; SystemConfig.ResolutionHeight = _resolutions[idx].H; break;
+                case 0:
+                    int idx = Math.Clamp(GetResIndex() + direction, 0, _resolutions.Length - 1);
+                    SystemConfig.ResolutionWidth = _resolutions[idx].W; SystemConfig.ResolutionHeight = _resolutions[idx].H; break;
                 case 1: SystemConfig.MasterVolume = Math.Clamp(SystemConfig.MasterVolume + (direction * 5), 0, 100); break;
                 case 2: SystemConfig.SfxVolume = Math.Clamp(SystemConfig.SfxVolume + (direction * 5), 0, 100); break;
                 case 3: SystemConfig.MouseSensitivity = Math.Clamp(SystemConfig.MouseSensitivity + (direction * 0.0005f), 0.0005f, 0.01f); break;
@@ -91,7 +96,7 @@ public class SettingsScene : Scene
                 case 2: SystemConfig.AntiAliasingMode = (SystemConfig.AntiAliasingMode + direction + 2) % 2; break;
                 case 3: SystemConfig.MotionBlurIntensity = Math.Clamp(SystemConfig.MotionBlurIntensity + (direction * 0.1f), 0f, 1f); break;
                 case 4: SystemConfig.DepthOfFieldEnabled = !SystemConfig.DepthOfFieldEnabled; break;
-                case 5: SystemConfig.HardwareUpscale = !SystemConfig.HardwareUpscale;break;
+                case 5: SystemConfig.HardwareUpscale = !SystemConfig.HardwareUpscale; break;
             }
         }
     }
@@ -106,11 +111,12 @@ public class SettingsScene : Scene
             engine.DrawHudText((_currentTab == t ? ">" : " ") + _tabs[t], midX - 350 + (t * 220), midY - 160, 3f, _currentTab == t ? _white : _matrixGreen);
 
         // Rysuj listę ustawień dla aktywnej zakładki
-        string[] currentItems = _currentTab switch { 
+        string[] currentItems = _currentTab switch
+        {
             0 => new[] { "ROZDZIELCZOSC", "GLOSNOSC GLOWNA", "GLOSNOSC EFEKTOW", "CZULOSC MYSZY", "FOV", "VSYNC" },
             1 => new[] { "JAKOSC GEOMETRII", "RENDER SCALE", "CIENIE", "DRAW DISTANCE", "ANISO FILTERING" },
-            2 => new[] { "BLOOM", "AMBIENT OCCLUSION", "ANTI-ALIASING (FXAA)", "MOTION BLUR", "DEPTH OF FIELD","UPSCALER" },
-            _ => new string[0] 
+            2 => new[] { "BLOOM", "AMBIENT OCCLUSION", "ANTI-ALIASING (FXAA)", "MOTION BLUR", "DEPTH OF FIELD", "UPSCALER" },
+            _ => new string[0]
         };
 
         for (int i = 0; i < currentItems.Length; i++)
@@ -127,7 +133,7 @@ public class SettingsScene : Scene
     {
         if (tab == 0) return item switch { 0 => $"{SystemConfig.ResolutionWidth}x{SystemConfig.ResolutionHeight}", 1 => $"{SystemConfig.MasterVolume}%", 2 => $"{SystemConfig.SfxVolume}%", 3 => $"{SystemConfig.MouseSensitivity:F4}", 4 => $"{SystemConfig.Fov}", 5 => SystemConfig.VSync ? "WL" : "WYL", _ => "" };
         if (tab == 1) return item switch { 0 => SystemConfig.GraphicsQuality switch { 0 => "NISKA", 1 => "SREDNIA", 2 => "WYSOKA", _ => "X" }, 1 => $"{(int)(SystemConfig.RenderScale * 100)}%", 2 => SystemConfig.ShadowsEnabled ? "WL" : "WYL", 3 => $"{SystemConfig.DrawDistance}", 4 => SystemConfig.AnisotropicFiltering ? "WL" : "WYL", _ => "" };
-        if (tab == 2) return item switch { 0 => SystemConfig.BloomEnabled ? "WL" : "WYL", 1 => SystemConfig.AmbientOcclusionEnabled ? "WL" : "WYL", 2 => SystemConfig.AntiAliasingMode == 1 ? "FXAA" : "WYL", 3 => $"{SystemConfig.MotionBlurIntensity:F1}", 4 => SystemConfig.DepthOfFieldEnabled ? "WL" : "WYL", 5=> SystemConfig.HardwareUpscale? "WL":"WYL", _ => "" };
+        if (tab == 2) return item switch { 0 => SystemConfig.BloomEnabled ? "WL" : "WYL", 1 => SystemConfig.AmbientOcclusionEnabled ? "WL" : "WYL", 2 => SystemConfig.AntiAliasingMode == 1 ? "FXAA" : "WYL", 3 => $"{SystemConfig.MotionBlurIntensity:F1}", 4 => SystemConfig.DepthOfFieldEnabled ? "WL" : "WYL", 5 => SystemConfig.HardwareUpscale ? "WL" : "WYL", _ => "" };
         return "";
     }
 }

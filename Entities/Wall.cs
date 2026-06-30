@@ -16,10 +16,10 @@ public class Wall : GameObject
     {
         float dx = Transform.Position.X - engine.CameraPosition.X;
         float dz = Transform.Position.Z - engine.CameraPosition.Z;
-        
+
         // Optymalizacja renderowania na podstawie wybranej jakości grafiki w ustawieniach
         float maxDist = SystemConfig.GraphicsQuality switch { 0 => 256f, 1 => 576f, 2 => 1296f, _ => 576f }; // 16^2, 24^2, 36^2
-        if ((dx * dx + dz * dz) > maxDist) return; 
+        if ((dx * dx + dz * dz) > maxDist) return;
 
         engine.DrawCube(Transform.Position.X - 1.0f, 0.0f, Transform.Position.Z - 1.0f, 2.0f, 2.0f, 2.0f);
 
