@@ -47,7 +47,7 @@ public class SettingsScene : Scene
         engine.ApplyGraphicsSettings();
     }
 
-    private int GetTabItemCount() => _currentTab switch { 0 => 6, 1 => 5, 2 => 5, _ => 0 };
+    private int GetTabItemCount() => _currentTab switch { 0 => 6, 1 => 5, 2 => 6, _ => 0 };
 
     private int GetResIndex()
     {
@@ -91,6 +91,7 @@ public class SettingsScene : Scene
                 case 2: SystemConfig.AntiAliasingMode = (SystemConfig.AntiAliasingMode + direction + 2) % 2; break;
                 case 3: SystemConfig.MotionBlurIntensity = Math.Clamp(SystemConfig.MotionBlurIntensity + (direction * 0.1f), 0f, 1f); break;
                 case 4: SystemConfig.DepthOfFieldEnabled = !SystemConfig.DepthOfFieldEnabled; break;
+                case 5: SystemConfig.HardwareUpscale = !SystemConfig.HardwareUpscale;break;
             }
         }
     }
@@ -108,7 +109,7 @@ public class SettingsScene : Scene
         string[] currentItems = _currentTab switch { 
             0 => new[] { "ROZDZIELCZOSC", "GLOSNOSC GLOWNA", "GLOSNOSC EFEKTOW", "CZULOSC MYSZY", "FOV", "VSYNC" },
             1 => new[] { "JAKOSC GEOMETRII", "RENDER SCALE", "CIENIE", "DRAW DISTANCE", "ANISO FILTERING" },
-            2 => new[] { "BLOOM", "AMBIENT OCCLUSION", "ANTI-ALIASING (FXAA)", "MOTION BLUR", "DEPTH OF FIELD" },
+            2 => new[] { "BLOOM", "AMBIENT OCCLUSION", "ANTI-ALIASING (FXAA)", "MOTION BLUR", "DEPTH OF FIELD","UPSCALER" },
             _ => new string[0] 
         };
 
@@ -126,7 +127,7 @@ public class SettingsScene : Scene
     {
         if (tab == 0) return item switch { 0 => $"{SystemConfig.ResolutionWidth}x{SystemConfig.ResolutionHeight}", 1 => $"{SystemConfig.MasterVolume}%", 2 => $"{SystemConfig.SfxVolume}%", 3 => $"{SystemConfig.MouseSensitivity:F4}", 4 => $"{SystemConfig.Fov}", 5 => SystemConfig.VSync ? "WL" : "WYL", _ => "" };
         if (tab == 1) return item switch { 0 => SystemConfig.GraphicsQuality switch { 0 => "NISKA", 1 => "SREDNIA", 2 => "WYSOKA", _ => "X" }, 1 => $"{(int)(SystemConfig.RenderScale * 100)}%", 2 => SystemConfig.ShadowsEnabled ? "WL" : "WYL", 3 => $"{SystemConfig.DrawDistance}", 4 => SystemConfig.AnisotropicFiltering ? "WL" : "WYL", _ => "" };
-        if (tab == 2) return item switch { 0 => SystemConfig.BloomEnabled ? "WL" : "WYL", 1 => SystemConfig.AmbientOcclusionEnabled ? "WL" : "WYL", 2 => SystemConfig.AntiAliasingMode == 1 ? "FXAA" : "WYL", 3 => $"{SystemConfig.MotionBlurIntensity:F1}", 4 => SystemConfig.DepthOfFieldEnabled ? "WL" : "WYL", _ => "" };
+        if (tab == 2) return item switch { 0 => SystemConfig.BloomEnabled ? "WL" : "WYL", 1 => SystemConfig.AmbientOcclusionEnabled ? "WL" : "WYL", 2 => SystemConfig.AntiAliasingMode == 1 ? "FXAA" : "WYL", 3 => $"{SystemConfig.MotionBlurIntensity:F1}", 4 => SystemConfig.DepthOfFieldEnabled ? "WL" : "WYL", 5=> SystemConfig.HardwareUpscale? "WL":"WYL", _ => "" };
         return "";
     }
 }

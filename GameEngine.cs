@@ -79,12 +79,12 @@ public class GameEngine
     public Vector2 MouseDelta { get; private set; } = Vector2.Zero;
     public bool TriggerMuzzleFlash { get; set; } = false;
 
-    public float Width => SystemConfig.ResolutionHeight;
+    public float Width => SystemConfig.ResolutionWidth;
     public float Height => SystemConfig.ResolutionHeight;
     public RgbaFloat ClearColor { get; set; } = RgbaFloat.Black; 
     public string GpuName => _device.DeviceName;
 
-
+    private TextureView _offscreenDepthView = null!;
     public void LoadScene(Scene scene) { _nextScene = scene; }
 
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
@@ -152,6 +152,12 @@ private DeviceBuffer _settingsBuffer;
             {
                 _currentResW = SystemConfig.ResolutionWidth;
                 _currentResH = SystemConfig.ResolutionHeight;
+                if (_window != null)
+                {
+                    _window.Width = SystemConfig.ResolutionWidth;
+                    _window.Height = SystemConfig.ResolutionHeight;
+                }
+                rebuildOffscreen = true;
             }
             if (Math.Abs(_currentRenderScale - SystemConfig.RenderScale) > 0.01f)
             {
@@ -189,11 +195,13 @@ private DeviceBuffer _settingsBuffer;
         if (w < 1) w = 1; if (h < 1) h = 1;
 
         _offscreenColor = _device.ResourceFactory.CreateTexture(TextureDescription.Texture2D(w, h, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.RenderTarget | TextureUsage.Sampled));
-        _offscreenDepth = _device.ResourceFactory.CreateTexture(TextureDescription.Texture2D(w, h, 1, 1, PixelFormat.D24_UNorm_S8_UInt, TextureUsage.DepthStencil));
+        _offscreenDepth = _device.ResourceFactory.CreateTexture(TextureDescription.Texture2D(w, h, 1, 1, PixelFormat.D24_UNorm_S8_UInt, TextureUsage.DepthStencil | TextureUsage.Sampled));
+        _offscreenDepthView = _device.ResourceFactory.CreateTextureView(_offscreenDepth);
+        
         _offscreenFB = _device.ResourceFactory.CreateFramebuffer(new FramebufferDescription(_offscreenDepth, _offscreenColor));
         _offscreenColorView = _device.ResourceFactory.CreateTextureView(_offscreenColor);
 
-        _postResourceSet = _device.ResourceFactory.CreateResourceSet(new ResourceSetDescription(_postResourceLayout, _offscreenColorView, _device.LinearSampler,_settingsBuffer));
+        _postResourceSet = _device.ResourceFactory.CreateResourceSet(new ResourceSetDescription(_postResourceLayout, _offscreenColorView, _device.LinearSampler,_settingsBuffer,_offscreenDepthView));
     }
 
     private void LoadWallTexture()
@@ -211,7 +219,7 @@ private DeviceBuffer _settingsBuffer;
         _wallTexture = _device.ResourceFactory.CreateTexture(TextureDescription.Texture2D(width, height, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Sampled));
         _device.UpdateTexture(_wallTexture, pixelData, 0, 0, 0, width, height, 1, 0, 0);
         _wallTextureView = _device.ResourceFactory.CreateTextureView(_wallTexture);
-        _sampler = _device.ResourceFactory.CreateSampler(SamplerDescription.Aniso4x);
+        _sampler = _device.ResourceFactory.CreateSampler(SamplerDescription.Point);
     }
 
     private void PrepareGraphicsPipeline()
@@ -272,7 +280,8 @@ private DeviceBuffer _settingsBuffer;
         _postResourceLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
             new ResourceLayoutElementDescription("u_ScreenTex", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
             new ResourceLayoutElementDescription("u_Sampler", ResourceKind.Sampler, ShaderStages.Fragment),
-            new ResourceLayoutElementDescription("GraphicsSettingsBlock",ResourceKind.UniformBuffer,ShaderStages.Fragment)
+            new ResourceLayoutElementDescription("GraphicsSettingsBlock",ResourceKind.UniformBuffer,ShaderStages.Fragment),
+            new ResourceLayoutElementDescription("u_DethText", ResourceKind.TextureReadOnly, ShaderStages.Fragment)
         ));
 
         GraphicsPipelineDescription postPd = new GraphicsPipelineDescription {
@@ -501,13 +510,13 @@ private DeviceBuffer _settingsBuffer;
 
             if (ShowGameplayHud)
             {
-                float midX = _window.Width / 2f; float midY = _window.Height / 2f;
+                float midX = Width / 2f; float midY = Height / 2f;
                 DrawHudRectangle(midX - 12, midY - 1, 24, 2, matrixGreen); 
                 DrawHudRectangle(midX - 1, midY - 12, 2, 24, matrixGreen); 
-                DrawHudRectangle(15, _window.Height - 65, 250, 50, new RgbaFloat(0.0f, 0.05f, 0.01f, 0.70f));
-                DrawHudText($"ENG: {PlayerEnergy} %", 30, _window.Height - 53, 4f, matrixGreen);
+                DrawHudRectangle(15, Height - 65, 250, 50, new RgbaFloat(0.0f, 0.05f, 0.01f, 0.70f));
+                DrawHudText($"ENG: {PlayerEnergy} %", 30, Height - 53, 4f, matrixGreen);
 
-                float gunBaseX = _window.Width - 320f; float gunBaseY = _window.Height - 240f + (WeaponRecoil * 120f);
+                float gunBaseX = Width - 320f; float gunBaseY = Height - 240f + (WeaponRecoil * 120f);
                 DrawHudRectangle(gunBaseX, gunBaseY, 140, 240, new RgbaFloat(0.05f, 0.15f, 0.08f, 0.95f));
                 DrawHudRectangle(gunBaseX + 20, gunBaseY - 80, 25, 100, new RgbaFloat(0.02f, 0.22f, 0.05f, 1.0f));
                 DrawHudRectangle(gunBaseX + 95, gunBaseY - 80, 25, 100, new RgbaFloat(0.02f, 0.22f, 0.05f, 1.0f));
@@ -532,7 +541,7 @@ private DeviceBuffer _settingsBuffer;
             TriggerMuzzleFlash = false;
         }
 
-        if (_offscreenFB != null) { _offscreenFB.Dispose(); _offscreenColor.Dispose(); _offscreenDepth.Dispose(); _offscreenColorView.Dispose(); _postResourceSet.Dispose(); }
+        if (_offscreenFB != null) { _offscreenFB.Dispose(); _offscreenColor.Dispose(); _offscreenDepth.Dispose(); _offscreenColorView.Dispose();_offscreenDepthView.Dispose(); _postResourceSet.Dispose(); }
         _wallTexture.Dispose(); _wallTextureView.Dispose(); _sampler.Dispose();
         _vertexBuffer.Dispose(); _viewProjBuffer.Dispose(); _lightBuffer.Dispose(); 
         _hudVertexBuffer.Dispose(); _hudPipeline.Dispose(); _pipeline.Dispose(); _postPipeline.Dispose(); _commandList.Dispose(); _device.Dispose();

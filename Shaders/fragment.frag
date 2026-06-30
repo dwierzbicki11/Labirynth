@@ -12,7 +12,7 @@ void main() {
         float glowWave = fract(matrixUV.y * 3.0 + drift); materialColor = vec3(0.0, 1.0, 0.2) * rawTex.rgb * (0.3 + 0.7 * glowWave); ambient = vec3(0.0, 0.02, 0.002) * materialColor;
     } else {
         vec2 gridUV = fract(v_WorldPos.xz * 1.0); float gridLine = step(0.97, gridUV.x) + step(0.97, gridUV.y);
-        materialColor = mix(vec3(0.11, 0.11, 0.14), vec3(0.0, 0.45, 1.0), gridLine); ambient = vec3(0.01, 0.01, 0.015); 
+        materialColor = mix(vec3(0.11, 0.11, 0.14), vec3(0.0, 0.45, 1.0), gridLine); ambient = vec3(0.01, 0.01, 0.015);
     }
     vec3 lighting = vec3(0.0); vec3 flashLightDir = normalize(u_FlashlightPos.xyz - v_WorldPos);
     float flashDist = length(u_FlashlightPos.xyz - v_WorldPos); float flashAtt = 1.0 / (1.0 + 0.04 * flashDist + 0.008 * flashDist * flashDist);

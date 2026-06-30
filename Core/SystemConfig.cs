@@ -23,6 +23,7 @@ public static class SystemConfig
     public static bool BloomEnabled = true;
     public static bool AmbientOcclusionEnabled = true;
     public static int AntiAliasingMode = 1; // 0: Off, 1: FXAA
+    public static bool HardwareUpscale = false;
 
     // === INNE ===
     public static int ResolutionWidth = 1280;
@@ -54,6 +55,7 @@ public static class SystemConfig
         public int MasterVolume { get; set; }
         public int SfxVolume { get; set; }
         public float MouseSensitivity { get; set; }
+        public bool HardwareUpscale { get; set; }
     }
 
     public static void Save()
@@ -68,7 +70,7 @@ public static class SystemConfig
                 BloomEnabled = BloomEnabled, AmbientOcclusionEnabled = AmbientOcclusionEnabled, 
                 AntiAliasingMode = AntiAliasingMode, ResolutionWidth = ResolutionWidth, 
                 ResolutionHeight = ResolutionHeight, Fov = Fov, MasterVolume = MasterVolume, 
-                SfxVolume = SfxVolume, MouseSensitivity = MouseSensitivity
+                SfxVolume = SfxVolume, MouseSensitivity = MouseSensitivity,HardwareUpscale = HardwareUpscale
             };
             File.WriteAllText(ConfigPath, JsonSerializer.Serialize(dto, new JsonSerializerOptions { WriteIndented = true }));
         } 
@@ -90,7 +92,7 @@ public static class SystemConfig
                 BloomEnabled = dto.BloomEnabled; AmbientOcclusionEnabled = dto.AmbientOcclusionEnabled;
                 AntiAliasingMode = dto.AntiAliasingMode; ResolutionWidth = dto.ResolutionWidth;
                 ResolutionHeight = dto.ResolutionHeight; Fov = dto.Fov; MasterVolume = dto.MasterVolume;
-                SfxVolume = dto.SfxVolume; MouseSensitivity = dto.MouseSensitivity;
+                SfxVolume = dto.SfxVolume; MouseSensitivity = dto.MouseSensitivity;HardwareUpscale = dto.HardwareUpscale;
             }
         } 
         catch (Exception ex) { Console.WriteLine($"Blad odczytu configu: {ex.Message}"); }
