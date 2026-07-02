@@ -19,17 +19,20 @@ public class MainMenuScene : Scene
 
     public override void OnUpdate(double deltaTime, InputSnapshot snapshot, GameEngine engine)
     {
-        foreach (KeyEvent k in snapshot.KeyEvents)
+        if (snapshot != null)
         {
-            if (k.Down)
+            foreach (KeyEvent k in snapshot.KeyEvents)
             {
-                if (k.Key == Key.W || k.Key == Key.Up) _selectedIndex = (_selectedIndex - 1 + 3) % 3;
-                else if (k.Key == Key.S || k.Key == Key.Down) _selectedIndex = (_selectedIndex + 1) % 3;
-                else if (k.Key == Key.Enter || k.Key == Key.Space)
+                if (k.Down)
                 {
-                    if (_selectedIndex == 0) engine.LoadScene(new GameScene());
-                    else if (_selectedIndex == 1) engine.LoadScene(new SettingsScene());
-                    else if (_selectedIndex == 2) Environment.Exit(0);
+                    if (k.Key == Key.W || k.Key == Key.Up) _selectedIndex = (_selectedIndex - 1 + 3) % 3;
+                    else if (k.Key == Key.S || k.Key == Key.Down) _selectedIndex = (_selectedIndex + 1) % 3;
+                    else if (k.Key == Key.Enter || k.Key == Key.Space)
+                    {
+                        if (_selectedIndex == 0) engine.LoadScene(new GameScene());
+                        else if (_selectedIndex == 1) engine.LoadScene(new SettingsScene());
+                        else if (_selectedIndex == 2) Environment.Exit(0);
+                    }
                 }
             }
         }

@@ -28,14 +28,19 @@ public class GameScene : Scene
     public override void OnUpdate(double deltaTime, InputSnapshot snapshot, GameEngine engine)
     {
         bool czyStrzelonoWTejKlatce = false;
-        foreach (KeyEvent keyEvent in snapshot.KeyEvents)
+        
+        // Zabezpieczenie przed atakiem Headless / testami Fuzzing
+        if (snapshot != null)
         {
-            if (keyEvent.Down)
+            foreach (KeyEvent keyEvent in snapshot.KeyEvents)
             {
-                _trzymaneKlawisze.Add(keyEvent.Key);
-                if (keyEvent.Key == Key.Space) czyStrzelonoWTejKlatce = true;
+                if (keyEvent.Down)
+                {
+                    _trzymaneKlawisze.Add(keyEvent.Key);
+                    if (keyEvent.Key == Key.Space) czyStrzelonoWTejKlatce = true;
+                }
+                else _trzymaneKlawisze.Remove(keyEvent.Key);
             }
-            else _trzymaneKlawisze.Remove(keyEvent.Key);
         }
 
         if (_trzymaneKlawisze.Contains(Key.Escape)) { engine.LoadScene(new MainMenuScene()); return; }
@@ -50,6 +55,14 @@ public class GameScene : Scene
         engine.CameraPosition = _player.Transform.Position;
         engine.WeaponRecoil = _player.WeaponRecoil;
         engine.PlayerEnergy = _player.Energy;
+
+        // Tłumaczenie kątów Eulera na wektor 3D kamery
+        Vector3 trueForward = new Vector3(
+            MathF.Sin(_player.Yaw) * MathF.Cos(_player.Pitch),
+            MathF.Sin(_player.Pitch),
+            -MathF.Cos(_player.Yaw) * MathF.Cos(_player.Pitch)
+        );
+        engine.CameraForward = trueForward;
 
         if (czyStrzelonoWTejKlatce && _player.ShootCooldown <= 0f && _player.Energy > 0)
         {
@@ -121,10 +134,19 @@ public class GameScene : Scene
             }
         }
 
+        // [OPTYMALIZACJA] Zebranie aktywnych laserów w celu usunięcia zagnieżdżenia pętli O(N^2)
+        List<Laser> aktywneLasery = new List<Laser>();
+        for (int i = 0; i < GameObjects.Count; i++)
+        {
+            if (GameObjects[i] is Laser l && !l.IsDestroyed) 
+                aktywneLasery.Add(l);
+        }
+
         for (int i = 0; i < GameObjects.Count; i++)
         {
             if (GameObjects[i] is Wall wall)
             {
+                // Obliczenia kolizji gracza ze ścianą
                 float dx = _player.Transform.Position.X - wall.Transform.Position.X;
                 float dz = _player.Transform.Position.Z - wall.Transform.Position.Z;
                 float distSq = dx * dx + dz * dz;
@@ -137,14 +159,18 @@ public class GameScene : Scene
                     _player.Transform.Position += new Vector3((dx / odleglosc) * overlap, 0f, (dz / odleglosc) * overlap);
                 }
 
-                for (int j = 0; j < GameObjects.Count; j++)
+                // [ZMODYFIKOWANE] Obliczenia kolizji z laserami. Pętla wykona się TYLKO dla faktycznie wystrzelonych promieni.
+                for (int j = 0; j < aktywneLasery.Count; j++)
                 {
-                    if (GameObjects[j] is Laser laser && !laser.IsDestroyed)
+                    Laser laser = aktywneLasery[j];
+                    if (laser.IsDestroyed) continue;
+
+                    float ldx = laser.Transform.Position.X - wall.Transform.Position.X;
+                    float ldz = laser.Transform.Position.Z - wall.Transform.Position.Z;
+                    
+                    if ((ldx * ldx + ldz * ldz) < ((laser.Radius + wall.Radius) * (laser.Radius + wall.Radius)))
                     {
-                        float ldx = laser.Transform.Position.X - wall.Transform.Position.X;
-                        float ldz = laser.Transform.Position.Z - wall.Transform.Position.Z;
-                        if ((ldx * ldx + ldz * ldz) < ((laser.Radius + wall.Radius) * (laser.Radius + wall.Radius)))
-                            laser.Destroy();
+                        laser.Destroy();
                     }
                 }
             }
@@ -155,15 +181,28 @@ public class GameScene : Scene
     {
         bool[,] grid = new bool[size, size];
         for (int x = 0; x < size; x++) for (int z = 0; z < size; z++) grid[x, z] = true;
+        
         int seed = (cx * 73856093) ^ (cz * 83492791);
         Random rng = new Random(seed);
         Stack<(int x, int z)> stack = new Stack<(int, int)>();
-        grid[1, 1] = false; stack.Push((1, 1));
+        
+        grid[1, 1] = false; 
+        stack.Push((1, 1));
 
+        int failsafe = 0; // [BEZPIECZNIK] Zabezpieczenie pętli (Watchdog)
+        
         while (stack.Count > 0)
         {
+            failsafe++;
+            if (failsafe > 500000)
+            {
+                Console.WriteLine("[ERROR] Watchdog przerwał awaryjnie w Nieskończonej Pętli Generatora DFS!");
+                break;
+            }
+
             var curr = stack.Peek();
             List<(int x, int z)> neighbors = new List<(int, int)>();
+            
             if (curr.x - 2 > 0 && grid[curr.x - 2, curr.z]) neighbors.Add((curr.x - 2, curr.z));
             if (curr.x + 2 < size - 1 && grid[curr.x + 2, curr.z]) neighbors.Add((curr.x + 2, curr.z));
             if (curr.z - 2 > 0 && grid[curr.x, curr.z - 2]) neighbors.Add((curr.x, curr.z - 2));
@@ -173,14 +212,19 @@ public class GameScene : Scene
             {
                 var next = neighbors[rng.Next(neighbors.Count)];
                 grid[curr.x + (next.x - curr.x) / 2, curr.z + (next.z - curr.z) / 2] = false;
-                grid[next.x, next.z] = false; stack.Push(next);
+                grid[next.x, next.z] = false; 
+                stack.Push(next);
             }
-            else stack.Pop();
+            else 
+            {
+                stack.Pop();
+            }
         }
 
         int mid = size / 2;
         grid[mid, 0] = false; grid[mid, size - 1] = false; grid[0, mid] = false; grid[size - 1, mid] = false;
         grid[mid, 1] = false; grid[mid, size - 2] = false; grid[1, mid] = false; grid[size - 2, mid] = false;
+        
         return grid;
     }
 }

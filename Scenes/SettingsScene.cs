@@ -25,26 +25,29 @@ public class SettingsScene : Scene
 
     public override void OnUpdate(double deltaTime, InputSnapshot snapshot, GameEngine engine)
     {
-        foreach (KeyEvent k in snapshot.KeyEvents)
+        if (snapshot != null)
         {
-            if (k.Down)
+            foreach (KeyEvent k in snapshot.KeyEvents)
             {
-                if (k.Key == Key.Escape) { SystemConfig.Save(); engine.LoadScene(new MainMenuScene()); }
-                else if (k.Key == Key.W || k.Key == Key.Up) _selectedIndex = Math.Max(0, _selectedIndex - 1);
-                else if (k.Key == Key.S || k.Key == Key.Down) _selectedIndex = Math.Min(GetTabItemCount() - 1, _selectedIndex + 1);
-                else if (k.Key == Key.A || k.Key == Key.Left) { if (_currentTab > 0) { _currentTab--; _selectedIndex = 0; } }
-                else if (k.Key == Key.D || k.Key == Key.Right)
+                if (k.Down)
                 {
-                    if (_currentTab < _tabs.Length - 1)
+                    if (k.Key == Key.Escape) { SystemConfig.Save(); engine.LoadScene(new MainMenuScene()); }
+                    else if (k.Key == Key.W || k.Key == Key.Up) _selectedIndex = Math.Max(0, _selectedIndex - 1);
+                    else if (k.Key == Key.S || k.Key == Key.Down) _selectedIndex = Math.Min(GetTabItemCount() - 1, _selectedIndex + 1);
+                    else if (k.Key == Key.A || k.Key == Key.Left) { if (_currentTab > 0) { _currentTab--; _selectedIndex = 0; } }
+                    else if (k.Key == Key.D || k.Key == Key.Right)
                     {
-                        _currentTab++; _selectedIndex = 0;
+                        if (_currentTab < _tabs.Length - 1)
+                        {
+                            _currentTab++; _selectedIndex = 0;
+                        }
+                        else AdjustValue(1);
                     }
-                    else AdjustValue(1);
-                }
-                else
-                {
-                    if (k.Key == Key.Enter) AdjustValue(1);
-                    else if (k.Key == Key.LShift) AdjustValue(-1);
+                    else
+                    {
+                        if (k.Key == Key.Enter) AdjustValue(1);
+                        else if (k.Key == Key.LShift) AdjustValue(-1);
+                    }
                 }
             }
         }
