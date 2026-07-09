@@ -48,7 +48,6 @@ public class Renderer : IDisposable
             Debug = false, 
             HasMainSwapchain = !isHeadless,
             SyncToVerticalBlank = false, 
-            // Zabezpieczenie przed błędem walidacji Veldrid: Format głębi tylko gdy istnieje okno
             SwapchainDepthFormat = isHeadless ? null : PixelFormat.D24_UNorm_S8_UInt
         };
 
@@ -56,8 +55,6 @@ public class Renderer : IDisposable
         
         _commandList = Device.ResourceFactory.CreateCommandList();
 
-        // [OFICERSKA OPTYMALIZACJA] W trybie Headless ucinamy wszystkie alokacje VRAM.
-        // Silnik działa jak czysty rdzeń obliczeniowy.
         if (isHeadless) return; 
 
         _currentRenderScale = SystemConfig.RenderScale; 
@@ -94,7 +91,6 @@ public class Renderer : IDisposable
         Matrix4x4 view = Matrix4x4.CreateLookAt(eyePos, eyePos + data.Camera.Forward, new Vector3(0, 1, 0));
         Matrix4x4 proj = Matrix4x4.CreatePerspectiveFieldOfView((SystemConfig.Fov * MathF.PI) / 180f, resW / resH, 0.05f, 100f);
         
-        // OFICERSKA NAPRAWA VULKANA 3D
         if (Device.IsClipSpaceYInverted) proj.M22 *= -1;
 
         _commandList.UpdateBuffer(_viewProjBuffer, 0, view * proj);
@@ -122,7 +118,6 @@ public class Renderer : IDisposable
         _commandList.SetPipeline(_postPipeline); _commandList.SetGraphicsResourceSet(0, _postResourceSet); _commandList.Draw(3);
 
         if (data.HudVertexCount > 0) {
-            // OFICERSKA NAPRAWA VULKANA 2D
             if (Device.IsClipSpaceYInverted)
             {
                 for (int i = 0; i < data.HudVertexCount; i++)
@@ -222,21 +217,45 @@ public class Renderer : IDisposable
         _hudPipeline = factory.CreateGraphicsPipeline(ref hpd);
     }
 
+    // ZMODYFIKOWANA PROCEDURA: Generator 4-częściowego Atlasu Tekstur
     private void LoadWallTexture() {
         uint w = 256; uint h = 256; byte[] pd = new byte[w * h * 4]; Random rand = new Random(1337);
         for (uint y = 0; y < h; y++) {
             for (uint x = 0; x < w; x++) {
-                uint i = (y * w + x) * 4; uint cX = x % 16;
-                if (cX > 2 && cX < 13 && rand.Next(100) < 65) { byte g = (byte)rand.Next(140, 255); pd[i] = (byte)(g / 6); pd[i + 1] = g; pd[i + 2] = (byte)(g / 2); pd[i + 3] = 255; }
-                else { pd[i] = 0; pd[i + 1] = 12; pd[i + 2] = 0; pd[i + 3] = 255; }
+                uint i = (y * w + x) * 4;
+                
+                bool isTop = y < 128;
+                bool isLeft = x < 128;
+                
+                if (isTop && isLeft) {
+                    // Kwadrant 1: Klasyczny Zielony Labirynt
+                    uint cX = x % 16;
+                    if (cX > 2 && cX < 13 && rand.Next(100) < 65) { byte g = (byte)rand.Next(140, 255); pd[i] = (byte)(g / 6); pd[i + 1] = g; pd[i + 2] = (byte)(g / 2); pd[i + 3] = 255; }
+                    else { pd[i] = 0; pd[i + 1] = 12; pd[i + 2] = 0; pd[i + 3] = 255; }
+                } else if (isTop && !isLeft) {
+                    // Kwadrant 2: Czerwony Hologram
+                    uint cX = x % 16;
+                    if (cX > 2 && cX < 13 && rand.Next(100) < 65) { byte r = (byte)rand.Next(140, 255); pd[i] = r; pd[i + 1] = (byte)(r / 6); pd[i + 2] = (byte)(r / 6); pd[i + 3] = 255; }
+                    else { pd[i] = 12; pd[i + 1] = 0; pd[i + 2] = 0; pd[i + 3] = 255; }
+                } else if (!isTop && isLeft) {
+                    // Kwadrant 3: Szary Metal Taktyczny (Jednolity Gunmetal)
+                    byte val = (byte)rand.Next(70, 100);
+                    pd[i] = val; pd[i + 1] = val; pd[i + 2] = val; pd[i + 3] = 255;
+                } else {
+                    // Kwadrant 4: Niebieska Plazma
+                    uint cX = x % 16;
+                    if (cX > 2 && cX < 13 && rand.Next(100) < 65) { byte b = (byte)rand.Next(140, 255); pd[i] = (byte)(b / 6); pd[i + 1] = (byte)(b / 2); pd[i + 2] = b; pd[i + 3] = 255; }
+                    else { pd[i] = 0; pd[i + 1] = 0; pd[i + 2] = 12; pd[i + 3] = 255; }
+                }
             }
         }
         _wallTexture = Device.ResourceFactory.CreateTexture(TextureDescription.Texture2D(w, h, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Sampled));
-        Device.UpdateTexture(_wallTexture, pd, 0, 0, 0, w, h, 1, 0, 0); _wallTextureView = Device.ResourceFactory.CreateTextureView(_wallTexture); _sampler = Device.ResourceFactory.CreateSampler(SamplerDescription.Point);
+        Device.UpdateTexture(_wallTexture, pd, 0, 0, 0, w, h, 1, 0, 0); 
+        _wallTextureView = Device.ResourceFactory.CreateTextureView(_wallTexture); 
+        _sampler = Device.ResourceFactory.CreateSampler(SamplerDescription.Point);
     }
 
     public void Dispose() {
-        // Zabezpieczenie przed rzucaniem null exception (w Headless te obiekty są puste)
         _pipeline?.Dispose(); _postPipeline?.Dispose(); _hudPipeline?.Dispose();
         _vertexBuffer?.Dispose(); _viewProjBuffer?.Dispose(); _lightBuffer?.Dispose(); _hudVertexBuffer?.Dispose(); _settingsBuffer?.Dispose();
         _offscreenFB?.Dispose(); _offscreenColor?.Dispose(); _offscreenDepth?.Dispose(); _wallTexture?.Dispose();

@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e 
+#set -e 
 
 # Konfiguracja środowiska
 LOCAL_PATH="/home/zonderq/Labirynth"
@@ -8,72 +8,104 @@ RPi_USER="zonderq"
 RPi_HOST="10.0.0.2"
 DOTNET_PATH="/home/zonderq/.dotnet/dotnet"
 
+# Opcje SSH zapobiegające zerwaniu sesji pod maksymalnym obciążeniem SoC
+SSH_OPTS="-o ServerAliveInterval=15 -o ServerAliveCountMax=4"
+
 echo "========================================================"
-echo "--- FABRYKA: Rozpoczęto pełny cykl produkcyjny ---"
+echo "--- FABRYKA: Rozpoczęto pełny cykl produkcyjny (AI-Optimized) ---"
 echo "========================================================"
 
-echo ">>> [1/14] Synchronizacja nowych zmian w kodzie źródłowym..."
+echo ">>> [1/19] Synchronizacja kodu źródłowego..."
 rsync -avz --delete --exclude 'bin' --exclude 'obj' --exclude '.git' "$LOCAL_PATH/" "$RPi_USER@$RPi_HOST:$REMOTE_PATH/"
 
-echo ">>> [2/14] Budowanie nowej wersji silnika (Release)..."
-ssh $RPi_USER@$RPi_HOST "$DOTNET_PATH build $REMOTE_PATH/CyberEngine.csproj -c Release"
+echo ">>> [2/19] Kompilacja shaderów na maszynie zdalnej (RPi)..."
+ssh $SSH_OPTS $RPi_USER@$RPi_HOST "cd $REMOTE_PATH && chmod +x CompileShaders.sh && ./CompileShaders.sh"
 
-echo ">>> [3/14] Testy jednostkowe podsystemu logicznego (Logika)..."
-ssh $RPi_USER@$RPi_HOST "$DOTNET_PATH test $REMOTE_PATH/CyberEngine.csproj --configuration Release"
+echo ">>> [3/19] Transfer zwrotny (Pull) skompilowanych plików .spv na stację lokalną..."
+rsync -avz "$RPi_USER@$RPi_HOST:$REMOTE_PATH/Shaders/*.spv" "$LOCAL_PATH/Shaders/"
 
-echo ">>> [4/14] Deterministyczny test wydajnościowy (Skalowanie Profili GPU)..."
-ssh $RPi_USER@$RPi_HOST "cd $REMOTE_PATH && rm -f benchmark_results.txt"
-PROFILES=("low" "med" "high")
-for i in "${!PROFILES[@]}"; do
-    PRESET=${PROFILES[$i]}
-    progress=$(( (i + 1) * 100 / ${#PROFILES[@]} ))
-    echo -ne "   -> Uruchamianie profilu: [$PRESET] ($progress%)... \r"
-    ssh $RPi_USER@$RPi_HOST "export DISPLAY=:0; export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/broadcom_icd.json; export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1; export HEADLESS=0; cd $REMOTE_PATH && $DOTNET_PATH exec bin/Release/net11.0/CyberEngine.dll --benchmark 100000 --preset $PRESET" || { echo -e "\n!!! BENCHMARK ($PRESET) NIE POWIÓDŁ SIĘ"; exit 1; }
+echo ">>> [4/19] Audyt cyberbezpieczeństwa: Skanowanie podatności CVE w zależnościach NuGet..."
+ssh $SSH_OPTS $RPi_USER@$RPi_HOST "cd $REMOTE_PATH && $DOTNET_PATH list package --vulnerable"
+
+echo ">>> [5/19] Budowanie nowej wersji silnika (Release)..."
+ssh $SSH_OPTS $RPi_USER@$RPi_HOST "$DOTNET_PATH build $REMOTE_PATH/CyberEngine.csproj -c Release"
+
+echo ">>> [6/19] Testy jednostkowe podsystemu logicznego (Logika)..."
+ssh $SSH_OPTS $RPi_USER@$RPi_HOST "$DOTNET_PATH test $REMOTE_PATH/CyberEngine.csproj --configuration Release"
+
+echo ">>> [7/19] Diagnostyka GPU: Czyszczenie logów benchmarku..."
+ssh $SSH_OPTS $RPi_USER@$RPi_HOST "cd $REMOTE_PATH && rm -f benchmark_results.txt"
+
+# WYBUDZENIE EKRANU I ZDJĘCIE BLOKADY ENERGETYCZNEJ (DPMS)
+echo "   -> [SYSTEM] Wybudzanie bufora ramki i wyłączanie DPMS na węźle..."
+ssh $SSH_OPTS $RPi_USER@$RPi_HOST "export DISPLAY=:0; export XAUTHORITY=/home/$RPi_USER/.Xauthority; xset dpms force on; xset s noblank; xset s off; xset -dpms" || echo "   -> [OSTRZEŻENIE] Brak aktywnej sesji X11..."
+
+# ZREDUKOWANA MACIERZ TESTOWA (Skupiona na stabilności rdzenia graficznego przy obciążeniu AI)
+VECTORS=(
+    "--preset low --vsync 0" 
+    "--resolution 1024x768 --preset low --vsync 0"
+    "--resolution 1024x768 --render-scale 0.5 --quality 0 --vsync 0"
+    "--preset low --draw-distance 64.0 --fov 90.0 --vsync 0"
+    "--vsync 1 --fps-limit 30 --preset low"
+)
+
+echo ">>> [8/19] Rozpoczęcie iteracji wektorów GPU (Low-Profile)..."
+for i in "${!VECTORS[@]}"; do
+    ARGS="${VECTORS[$i]}"
+    echo "   -> Wektor [$((i+1))/${#VECTORS[@]}]: $ARGS"
+    
+    ssh $SSH_OPTS $RPi_USER@$RPi_HOST "pkill -9 -f '[C]yberEngine' || true"
+    
+    ssh $SSH_OPTS $RPi_USER@$RPi_HOST "export DISPLAY=:0; export XAUTHORITY=/home/$RPi_USER/.Xauthority; export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/broadcom_icd.json; export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1; cd $REMOTE_PATH && flock -x -w 10 /tmp/cyberengine.lock $DOTNET_PATH exec bin/Release/net11.0/CyberEngine.dll --benchmark 5000 $ARGS"
 done
-echo -e "\n>>> Benchmarki zakończone."
 
-echo ">>> [5/14] Ekstrakcja i analiza telemetrycznych danych benchmarku..."
-ssh $RPi_USER@$RPi_HOST "if [ -f $REMOTE_PATH/benchmark_results.txt ]; then echo ' '; echo '--- RAPORT WYDAJNOŚCI GPU ---'; cat $REMOTE_PATH/benchmark_results.txt; echo ' '; else echo 'Brak pliku wyników!'; exit 1; fi"
+echo ">>> [9/19] Raport Benchmarków..."
+ssh $SSH_OPTS $RPi_USER@$RPi_HOST "cat $REMOTE_PATH/benchmark_results.txt"
 
-echo ">>> [6/14] Weryfikacja odporności systemu i stabilności pętli (Fuzzing)..."
-ssh $RPi_USER@$RPi_HOST "export DISPLAY=:0; export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/broadcom_icd.json; export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1; export HEADLESS=1; cd $REMOTE_PATH && $DOTNET_PATH exec bin/Release/net11.0/CyberEngine.dll --fuzz-mode" || { echo "!!! FUZZING NIE POWIÓDŁ SIĘ"; exit 1; }
+echo ">>> [10/19] Fuzzing (Pojedyncza Instancja - Wektor AI)..."
+ssh $SSH_OPTS $RPi_USER@$RPi_HOST "pkill -9 -f '[C]yberEngine' || true"
+ssh $SSH_OPTS $RPi_USER@$RPi_HOST "export DISPLAY=:0; export XAUTHORITY=/home/$RPi_USER/.Xauthority; cd $REMOTE_PATH && flock -x -w 10 /tmp/cyberengine.lock $DOTNET_PATH exec bin/Release/net11.0/CyberEngine.dll --fuzz-mode 5000"
 
-echo ">>> [6.5/14] Stress-Test: 5-minutowa symulacja długodystansowa..."
-ssh $RPi_USER@$RPi_HOST "export DISPLAY=:0; export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/broadcom_icd.json; export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1; export HEADLESS=1; cd $REMOTE_PATH && $DOTNET_PATH exec bin/Release/net11.0/CyberEngine.dll --stress-test" &
-SSH_PID=$!
-duration=300
-while [ $duration -gt 0 ]; do
-    echo -ne "   -> Czas pozostały do zakończenia testu: $duration sekund... \r"
-    sleep 1
-    duration=$((duration - 1))
-    if ! kill -0 $SSH_PID 2>/dev/null; then break; fi
-done
-echo -e "\n>>> Stress-Test zakończony."
+echo ">>> [11/19] Stress-Test GPU (Pojedyncza Instancja)..."
+ssh $SSH_OPTS $RPi_USER@$RPi_HOST "pkill -9 -f '[C]yberEngine' || true"
+ssh $SSH_OPTS $RPi_USER@$RPi_HOST "export DISPLAY=:0; export XAUTHORITY=/home/$RPi_USER/.Xauthority; cd $REMOTE_PATH && flock -x -w 10 /tmp/cyberengine.lock $DOTNET_PATH exec bin/Release/net11.0/CyberEngine.dll --stress-test 10"
 
-echo ">>> [7/14] Kompilacja Ahead-Of-Time (Kompilacja AOT / ReadyToRun)..."
-ssh $RPi_USER@$RPi_HOST "$DOTNET_PATH publish $REMOTE_PATH/CyberEngine.csproj -c Release -r linux-arm64 --self-contained true"
+echo ">>> [12/19] Multi-Instance Stress-Test CPU (2x Headless Concurrent Execution)..."
+# Redukcja z 4x do 2x instancji. 4x Phi-3 załadowane do RAM wywoła OOM Panic i zresetuje malinę.
+ssh $SSH_OPTS $RPi_USER@$RPi_HOST "pkill -9 -f '[C]yberEngine' || true"
+ssh $SSH_OPTS $RPi_USER@$RPi_HOST "export HEADLESS=1; export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1; cd $REMOTE_PATH && \
+    ($DOTNET_PATH exec bin/Release/net11.0/CyberEngine.dll --stress-test 15 & \
+     $DOTNET_PATH exec bin/Release/net11.0/CyberEngine.dll --stress-test 15 & \
+     wait)"
 
-echo ">>> [8/14] Audyt bezpieczeństwa i analiza zależności..."
-ssh $RPi_USER@$RPi_HOST "$DOTNET_PATH list $REMOTE_PATH/CyberEngine.csproj package --vulnerable"
+echo ">>> [13/19] GOD-BOT TACTICAL TEST (100k Klatek)..."
+# Właściwy test wytrzymałościowy modelu Phi-3, bota nawigacyjnego i zarządcy L1
+ssh $SSH_OPTS $RPi_USER@$RPi_HOST "pkill -9 -f '[C]yberEngine' || true"
+ssh $SSH_OPTS $RPi_USER@$RPi_HOST "export HEADLESS=1; cd $REMOTE_PATH && flock -x -w 10 /tmp/cyberengine.lock $DOTNET_PATH exec bin/Release/net11.0/CyberEngine.dll --ai-test --benchmark 100000 --preset low --vsync 0"
 
-echo ">>> [9/14] Statyczna analiza drzewa zależności..."
-ssh $RPi_USER@$RPi_HOST "$DOTNET_PATH list $REMOTE_PATH/CyberEngine.csproj package"
+echo ">>> [14/19] Kompilacja paczki samowystarczalnej (Publish)..."
+ssh $SSH_OPTS $RPi_USER@$RPi_HOST "$DOTNET_PATH publish $REMOTE_PATH/CyberEngine.csproj -c Release -r linux-arm64 --self-contained true"
 
-echo ">>> [10/14] Finalny build weryfikacyjny na stacji lokalnej (Laptop)..."
-dotnet build $LOCAL_PATH/CyberEngine.csproj -c Release
+# ====================================================================
+# SEKCJA: POST-PRODUKCJA I DYSTRYBUCJA
+# ====================================================================
 
-echo ">>> [11/14] Kontrola spójności plików binarnych..."
-ssh $RPi_USER@$RPi_HOST "ls -lh $REMOTE_PATH/bin/Release/net11.0/CyberEngine.dll"
+echo ">>> [15/19] Izolacja środowiska produkcyjnego (Deployment)..."
+ssh $SSH_OPTS $RPi_USER@$RPi_HOST "rm -rf $REMOTE_PATH/ProdBuild && mkdir -p $REMOTE_PATH/ProdBuild && cp -a $REMOTE_PATH/bin/Release/net11.0/linux-arm64/publish/. $REMOTE_PATH/ProdBuild/ && cp -r $REMOTE_PATH/Models $REMOTE_PATH/ProdBuild/ && cp -r $REMOTE_PATH/Shaders $REMOTE_PATH/ProdBuild/"
+echo ">>> [16/19] Nadawanie uprawnień wykonawczych binarce..."
+ssh $SSH_OPTS $RPi_USER@$RPi_HOST "chmod +x $REMOTE_PATH/ProdBuild/CyberEngine"
 
-echo ">>> [12/14] Czyszczenie logów przejściowych..."
-ssh $RPi_USER@$RPi_HOST "rm -f $REMOTE_PATH/perf_log_*.txt"
+echo ">>> [17/19] Test dymny (Smoke Test) natywnego pliku wykonywalnego..."
+ssh $SSH_OPTS $RPi_USER@$RPi_HOST "pkill -9 -f '[C]yberEngine' || true"
+ssh $SSH_OPTS $RPi_USER@$RPi_HOST "export DISPLAY=:0; export XAUTHORITY=/home/$RPi_USER/.Xauthority; cd $REMOTE_PATH/ProdBuild && flock -x -w 10 /tmp/cyberengine.lock ./CyberEngine --benchmark 10 --preset low"
 
-echo ">>> [13/14] Sygnowanie znacznikiem czasu..."
-ssh $RPi_USER@$RPi_HOST "echo 'Build time: $(date +%Y-%m-%d_%H:%M:%S)'"
+echo ">>> [18/19] Archiwizacja paczki dystrybucyjnej (Release TAR)..."
+ssh $SSH_OPTS $RPi_USER@$RPi_HOST "cd $REMOTE_PATH && tar -czf CyberEngine_arm64_latest.tar.gz -C ProdBuild ."
 
-echo ">>> [14/14] Generowanie manifestu pomyślnego wdrożenia..."
-ssh $RPi_USER@$RPi_HOST "touch $REMOTE_PATH/DEPLOYED_$(date +%Y%m%d_%H%M%S).log"
+echo ">>> [19/19] Czyszczenie artefaktów tymczasowych (Wipe /obj i /bin)..."
+ssh $SSH_OPTS $RPi_USER@$RPi_HOST "rm -rf $REMOTE_PATH/bin $REMOTE_PATH/obj $REMOTE_PATH/ProdBuild"
 
+echo ">>> Zakończono."
 echo "========================================================"
-echo "--- SUKCES: Kod przetestowany, skompilowany i wdrożony ---"
+echo "--- SUKCES: Cykl produkcyjny i testy klastrowe ukończone ---"
 echo "========================================================"

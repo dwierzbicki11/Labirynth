@@ -1,51 +1,90 @@
 using System;
 using System.Linq;
+using System.Globalization;
 using Veldrid;
 using CyberEngine;
 using CyberEngine.Scenes;
 using CyberEngine.Core;
+using System.Runtime.InteropServices;
 
-// Twarde przypisanie klasy Program
 class Program
 {
     static void Main(string[] args)
     {
-        Console.WriteLine("[CyberEngine] Inicjalizacja podsystemu VULKAN na układzie ARM64...");
+        Console.WriteLine($"[CyberEngine] Inicjalizacja podsystemu VULKAN na układzie {RuntimeInformation.ProcessArchitecture}...");
 
         try
         {
+            // 1. Wczytanie bazowego configu z dysku
             SystemConfig.Load();
             GraphicsBackend api = GraphicsBackend.Vulkan;
 
             var argsList = args.ToList();
             
-            // OFICERSKI MODUŁ CI/CD: Interpretacja wejściowych profili uderzeniowych
-            int presetIdx = argsList.IndexOf("--preset");
-            if (presetIdx != -1 && presetIdx + 1 < argsList.Count)
+            // 2. OFICERSKI MODUŁ CLI: Pełna parametryzacja sprzętowa
+            for (int i = 0; i < argsList.Count; i++)
             {
-                string p = argsList[presetIdx + 1].ToLower();
-                switch (p)
+                string arg = argsList[i].ToLower();
+                try
                 {
-                    case "low": SystemConfig.GraphicsQuality = 0; SystemConfig.RenderScale = 0.5f; SystemConfig.ShadowsEnabled = false; SystemConfig.BloomEnabled = false; break;
-                    case "med": SystemConfig.GraphicsQuality = 1; SystemConfig.RenderScale = 0.75f; SystemConfig.ShadowsEnabled = true; SystemConfig.BloomEnabled = true; break;
-                    case "high": SystemConfig.GraphicsQuality = 2; SystemConfig.RenderScale = 1.0f; SystemConfig.ShadowsEnabled = true; SystemConfig.BloomEnabled = true; break;
+                    switch (arg)
+                    {
+                        // Explicit Headless Mode Override
+                        case "--headless":
+                            Environment.SetEnvironmentVariable("HEADLESS", "1");
+                            Console.WriteLine("[SYSTEM] Tryb bezgłowy (HEADLESS) wymuszony przez CLI.");
+                            break;
+
+                        case "--preset":
+                            string p = argsList[++i].ToLower();
+                            if (p == "low") { SystemConfig.GraphicsQuality = 0; SystemConfig.RenderScale = 0.5f; SystemConfig.ShadowsEnabled = false; SystemConfig.BloomEnabled = false; }
+                            else if (p == "med") { SystemConfig.GraphicsQuality = 1; SystemConfig.RenderScale = 0.75f; SystemConfig.ShadowsEnabled = true; SystemConfig.BloomEnabled = true; }
+                            else if (p == "high") { SystemConfig.GraphicsQuality = 2; SystemConfig.RenderScale = 1.0f; SystemConfig.ShadowsEnabled = true; SystemConfig.BloomEnabled = true; }
+                            Console.WriteLine($"[CLI] Załadowano preset: {p.ToUpper()}");
+                            break;
+
+                        // Kontrola wydajności
+                        case "--vsync": SystemConfig.VSync = int.Parse(argsList[++i]) == 1; break;
+                        case "--fps-limit": SystemConfig.FpsLimit = int.Parse(argsList[++i]); break;
+                        case "--render-scale": SystemConfig.RenderScale = float.Parse(argsList[++i], CultureInfo.InvariantCulture); break;
+                        
+                        // Geometria i Render
+                        case "--resolution":
+                            var res = argsList[++i].Split('x');
+                            SystemConfig.ResolutionWidth = int.Parse(res[0]);
+                            SystemConfig.ResolutionHeight = int.Parse(res[1]);
+                            break;
+                        case "--quality": SystemConfig.GraphicsQuality = int.Parse(argsList[++i]); break;
+                        case "--shadows": SystemConfig.ShadowsEnabled = int.Parse(argsList[++i]) == 1; break;
+                        case "--af": SystemConfig.AnisotropicFiltering = int.Parse(argsList[++i]) == 1; break;
+                        case "--draw-distance": SystemConfig.DrawDistance = float.Parse(argsList[++i], CultureInfo.InvariantCulture); break;
+                        case "--fov": SystemConfig.Fov = float.Parse(argsList[++i], CultureInfo.InvariantCulture); break;
+
+                        // Post-Processing
+                        case "--motion-blur": SystemConfig.MotionBlurIntensity = float.Parse(argsList[++i], CultureInfo.InvariantCulture); break;
+                        case "--dof": SystemConfig.DepthOfFieldEnabled = int.Parse(argsList[++i]) == 1; break;
+                        case "--bloom": SystemConfig.BloomEnabled = int.Parse(argsList[++i]) == 1; break;
+                        case "--ao": SystemConfig.AmbientOcclusionEnabled = int.Parse(argsList[++i]) == 1; break;
+                        case "--aa": SystemConfig.AntiAliasingMode = int.Parse(argsList[++i]); break;
+                        case "--hw-upscale": SystemConfig.HardwareUpscale = int.Parse(argsList[++i]) == 1; break;
+                    }
                 }
-                SystemConfig.Save();
-                Console.WriteLine($"[SYSTEM] Zdalne nadpisanie parametrów GPU: Profil {p.ToUpper()}");
+                catch (Exception)
+                {
+                    Console.WriteLine($"[OSTRZEŻENIE] Zignorowano uszkodzony parametr CLI: {arg}");
+                }
             }
 
-            // [TWARDE ZABEZPIECZENIE SYSTEMOWE] Wymuszenie trybu Headless na poziomie aplikacji
-            // Gwarantuje stabilność, odcinając Vulkan od próby tworzenia okna SDL2
-            if (argsList.Contains("--fuzz-mode") || argsList.Contains("--stress-test"))
-            {
-                Environment.SetEnvironmentVariable("HEADLESS", "1");
-                Console.WriteLine("[SYSTEM] Tryb Headless wymuszony programowo.");
-            }
+            SystemConfig.Save();
 
+            // Automatyczne wykrywanie trybów testowych
             bool isAutomated = argsList.Any(a => a == "--benchmark" || a == "--fuzz-mode" || a == "--stress-test");
 
             GameEngine engine = new GameEngine();
-            engine.Initialize("CyberEngine - Matrix Core", 1280, 720, api);
+            engine.IsBenchmarkMode = isAutomated;
+            
+            // Inicjalizacja podsystemu. Jeśli w CLI nie było --headless, okno zostanie utworzone poprawnie.
+            engine.Initialize("CyberEngine - Matrix Core", SystemConfig.ResolutionWidth, SystemConfig.ResolutionHeight, api);
 
             if (isAutomated)
             {

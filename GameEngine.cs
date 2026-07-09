@@ -1,6 +1,7 @@
 #nullable disable
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Numerics;
 using System.Text;
@@ -21,9 +22,14 @@ public class GameEngine
     private Sdl2Window _window;
     private readonly World _world = new World();
     private readonly Renderer _renderer = new Renderer();
+    private readonly System.Net.Sockets.UdpClient _telemetryClient = new System.Net.Sockets.UdpClient();
+    
+    private readonly byte[] _udpBuffer = new byte[256];
 
     private Scene _currentScene;
     private Scene _nextScene;
+
+    public bool IsBenchmarkMode { get; set; } = false;
 
     public Vector3 CameraPosition { get => _world.CameraPosition; set => _world.CameraPosition = value; }
     public float CameraYaw { get => _world.CameraYaw; set => _world.CameraYaw = value; }
@@ -43,6 +49,11 @@ public class GameEngine
     public void LoadScene(Scene scene) { _nextScene = scene; }
     public void RegisterLantern(Vector3 position) { _world.RegisterLantern(position); }
     public void DrawHorizontalPlane(float x, float y, float z, float w, float d, float m, float nx, float ny, float nz) => _world.DrawHorizontalPlane(x, y, z, w, d, m, nx, ny, nz);
+    
+    public void DrawSmoothPlane(float x, float z, float w, float d, float y00, float y10, float y01, float y11, Vector3 n00, Vector3 n10, Vector3 n01, Vector3 n11, float m) 
+        => _world.DrawSmoothPlane(x, z, w, d, y00, y10, y01, y11, n00, n10, n01, n11, m);
+    
+    public void DrawQuad(Vector3 v0, Vector3 v1, Vector3 v2, Vector3 v3, float m) => _world.DrawQuad(v0, v1, v2, v3, m);
     public void DrawCube(float x, float y, float z, float w, float h, float d) => _world.DrawCube(x, y, z, w, h, d);
     public void DrawHudRectangle(float x, float y, float w, float h, RgbaFloat c) => _world.DrawHudRectangle(x, y, w, h, c, Width, Height);
     public void DrawHudText(string t, float x, float y, float s, RgbaFloat c) => _world.DrawHudText(t, x, y, s, c, Width, Height);
@@ -56,7 +67,7 @@ public class GameEngine
         {
             if (!isHeadless)
             {
-                WindowCreateInfo windowCI = new WindowCreateInfo { X = 0, Y = 0, WindowWidth = width, WindowHeight = height, WindowTitle = title, WindowInitialState = WindowState.Normal };
+                WindowCreateInfo windowCI = new WindowCreateInfo { X = 0, Y = 0, WindowWidth = width, WindowHeight = height, WindowTitle = title, WindowInitialState = WindowState.FullScreen };
                 _window = VeldridStartup.CreateWindow(ref windowCI);
             }
 
@@ -69,75 +80,216 @@ public class GameEngine
             throw;
         }
     }
+
+    private void ExecuteEnginePipeline(double currentTime, float deltaTime, InputSnapshot snapshot)
+    {
+        if (_nextScene != null) 
+        { 
+            _currentScene?.OnUnload(this); 
+            _currentScene = _nextScene; 
+            _nextScene = null; 
+            _currentScene.OnLoad(this); 
+        }
+
+        _world.UpdateLogicStats(deltaTime);
+        
+        _currentScene?.OnUpdate(deltaTime, snapshot, this);
+
+        if (_currentScene != null)
+        {
+            var objs = _currentScene.GameObjects;
+            for (int i = objs.Count - 1; i >= 0; i--)
+            {
+                var obj = objs[i];
+                if (obj.IsDestroyed) objs.RemoveAt(i);
+                else obj.Update(deltaTime);
+            }
+        }
+
+        _world.Data.GpuDrawCalls = 0; 
+        _world.Data.GpuVertices = 0;
+        _world.PrepareNextFrame(currentTime);
+        
+        float viewDist = SystemConfig.GraphicsQuality switch { 0 => 16f, 1 => 24f, 2 => 36f, _ => 24f };
+        float fXStart = MathF.Floor(CameraPosition.X / 2f) * 2f - viewDist; 
+        float fXEnd = MathF.Floor(CameraPosition.X / 2f) * 2f + viewDist;
+        float fZStart = MathF.Floor(CameraPosition.Z / 2f) * 2f - viewDist; 
+        float fZEnd = MathF.Floor(CameraPosition.Z / 2f) * 2f + viewDist;
+        
+        for (float x = fXStart; x <= fXEnd; x += 2f)
+        {
+            for (float z = fZStart; z <= fZEnd; z += 2f) 
+            {
+                DrawHorizontalPlane(x, 0.0f, z, 2f, 2f, 1.0f, 0f, 1f, 0f); 
+
+                float c00 = World.GetCeilingHeight(x, z);
+                float c10 = World.GetCeilingHeight(x + 2f, z);
+                float c01 = World.GetCeilingHeight(x, z + 2f);
+                float c11 = World.GetCeilingHeight(x + 2f, z + 2f);
+
+                Vector3 cn00 = World.GetCeilingNormal(x, z);
+                Vector3 cn10 = World.GetCeilingNormal(x + 2f, z);
+                Vector3 cn01 = World.GetCeilingNormal(x, z + 2f);
+                Vector3 cn11 = World.GetCeilingNormal(x + 2f, z + 2f);
+
+                DrawSmoothPlane(x, z, 2f, 2f, c00, c10, c01, c11, cn00, cn10, cn01, cn11, 1.0f);
+            }
+        }
+        
+        if (ShowGameplayHud || IsBenchmarkMode)
+        {
+            _world.Draw3DWeapon(CameraPosition, CameraYaw, CameraPitch, WeaponRecoil);
+        }
+
+        if (_currentScene != null) 
+        {
+            var objs = _currentScene.GameObjects;
+            int count = objs.Count;
+            for (int i = 0; i < count; i++) objs[i].Render(this);
+        }
+
+        _currentScene?.OnRenderUI(this);
+        RenderInternalHud();
+    }
     
     private void RunStressTest(int seconds)
     {
-        Console.WriteLine($"--- [STRESS TEST ZAINICJOWANY: {seconds} SEKUND] ---");
+        IsBenchmarkMode = true;
+        Console.WriteLine($"--- [STRESS TEST KINEMATYCZNY ZAINICJOWANY: {seconds} SEKUND] ---");
         Stopwatch sw = Stopwatch.StartNew();
-        
+        bool isHeadless = Environment.GetEnvironmentVariable("HEADLESS") == "1";
+        float fixedDelta = 1f / 60f;
+
         while (sw.Elapsed.TotalSeconds < seconds) {
-            _world.CameraPosition += new Vector3(MathF.Sin(_world.CameraYaw), 0, -MathF.Cos(_world.CameraYaw)) * 0.05f;
-            _world.PrepareNextFrame(sw.Elapsed.TotalSeconds);
-            _currentScene?.OnUpdate(1f/60f, null, this);
-            _renderer.DrawFrame(_world.Data, _window, Width, Height, ClearColor, true);
+            InputSnapshot snapshot = isHeadless ? null : _window.PumpEvents();
+            ExecuteEnginePipeline(sw.Elapsed.TotalSeconds, fixedDelta, snapshot);
+            _renderer.DrawFrame(_world.Data, _window, Width, Height, ClearColor, isHeadless);
         }
         
         sw.Stop();
         Console.WriteLine($"--- [STRESS TEST ZAKOŃCZONY POMYŚLNIE] ---");
+        
+        // ZMIANA: Zamykanie systemów AI przed usunięciem renderera
+        _currentScene?.OnUnload(this); 
         _renderer.Dispose();
+        _telemetryClient.Close();
     }
     
     private void RunFuzzing(int iterations)
     {
-        Console.WriteLine($"--- [FUZZING ZAINICJOWANY: {iterations} CYKLI CPU] ---");
+        IsBenchmarkMode = true;
+        Console.WriteLine($"--- [FUZZING ZAINICJOWANY: {iterations} CYKLI CPU (TRYB EKSTREMALNY - BEZ GRAFIKI)] ---");
         Stopwatch sw = Stopwatch.StartNew(); 
-        float fixedDelta = 1f / 60f;
-        Random rng = new Random(1337);
-        int logInterval = iterations / 10;
         
+        int logInterval = iterations / 10;
+
         for (int i = 0; i < iterations; i++)
         {
-            if (i % 300 == 0) _world.CameraYaw = (float)(rng.NextDouble() * Math.PI * 2);
-            Vector3 forward = new Vector3(MathF.Sin(_world.CameraYaw), 0f, -MathF.Cos(_world.CameraYaw));
-            _world.CameraPosition += forward * 0.05f; 
+            float corruptDelta = (float)((new Random().NextDouble() * 20.0) - 10.0);
+            InputSnapshot randomSnapshot = new FuzzSnapshot(new Random());
 
-            _world.UpdateLogicStats(fixedDelta);
-            _currentScene?.OnUpdate(fixedDelta, null, this);
-            if (_currentScene != null) {
-                for (int j = 0; j < _currentScene.GameObjects.Count; j++)
-                    if (!_currentScene.GameObjects[j].IsDestroyed) _currentScene.GameObjects[j].Update(fixedDelta);
-                _currentScene.GameObjects.RemoveAll(o => o.IsDestroyed);
+            ExecuteEnginePipeline(sw.Elapsed.TotalSeconds, corruptDelta, randomSnapshot);
+            
+            if (i > 0 && i % logInterval == 0)
+            {
+                double currentSec = sw.Elapsed.TotalSeconds;
+                double opsPerSec = i / (currentSec > 0.001 ? currentSec : 0.001); 
+                float progress = ((float)i / iterations) * 100f;
+                
+                Console.WriteLine($"[TELEMETRIA] Fuzzing: {i}/{iterations} ({progress:F0}%) | Czas: {currentSec:F2}s | Wydajność pojedynczego rdzenia: {opsPerSec:F0} Op/s");
             }
+        }
 
-            // MODUŁ TELEMETRII (Raportowanie co 10%)
+        sw.Stop();
+        Console.WriteLine($"--- [FUZZING ZAKOŃCZONY. Czas całkowity: {sw.Elapsed.TotalSeconds:F2}s. Stabilność: 100%] ---");
+        
+        // ZMIANA: Bezpieczne zwolnienie sceny
+        _currentScene?.OnUnload(this); 
+        _renderer.Dispose();
+        _telemetryClient.Close();
+        Environment.Exit(0);
+    }
+
+    private void RunBenchmark(int frameCount)
+    {
+        IsBenchmarkMode = true;
+        string profile = SystemConfig.GraphicsQuality switch { 0 => "LOW", 1 => "MED", 2 => "HIGH", _ => "CUSTOM" };
+        Console.WriteLine($"--- [BENCHMARK KINEMATYCZNY ZAINICJOWANY: {frameCount} KLATEK | PROFIL: {profile}] ---");
+        Stopwatch sw = Stopwatch.StartNew();
+        float fixedDelta = 1f / 60f;
+        bool isHeadless = Environment.GetEnvironmentVariable("HEADLESS") == "1";
+        int logInterval = Math.Max(1, frameCount / 10);
+
+        for (int i = 0; i < frameCount; i++)
+        {
+            InputSnapshot snapshot = isHeadless ? null : _window.PumpEvents();
+
+            float simTime = i * fixedDelta;
+            ExecuteEnginePipeline(simTime, fixedDelta, snapshot);
+            _renderer.DrawFrame(_world.Data, _window, Width, Height, ClearColor, isHeadless);
+
             if (i > 0 && i % logInterval == 0)
             {
                 double currentSec = sw.Elapsed.TotalSeconds;
                 double currentFps = i / currentSec;
-                float progress = ((float)i / iterations) * 100f;
-                Console.WriteLine($"[TELEMETRIA] Fuzzing: {i}/{iterations} ({progress:F0}%) | Czas: {currentSec:F2}s | Wydajność rdzenia: {currentFps:F0} FPS");
+                float progress = ((float)i / frameCount) * 100f;
+                Console.WriteLine($"[TELEMETRIA GPU] Klatka: {i}/{frameCount} ({progress:F0}%) | Czas: {currentSec:F2}s | Oszacowanie: {currentFps:F0} FPS");
             }
         }
+        
         sw.Stop();
-        Console.WriteLine($"--- [FUZZING ZAKOŃCZONY. Czas całkowity: {sw.Elapsed.TotalSeconds:F2}s. Stabilność: 100%] ---");
+        double avg = sw.Elapsed.TotalMilliseconds / frameCount; double fps = 1000.0 / avg;
+        
+        string res = $"[PROFIL: {profile,-4}] FPS: {fps,6:F1}  |  Sredni czas klatki: {avg,5:F2} ms\n";
+        File.AppendAllText("benchmark_results.txt", res);
+        
+        Console.WriteLine($"--- [WYNIK ODCZYTANY I ZAPISANY DO LOGU] ---");
+        
+        // ZMIANA: Wymuszenie zatrzymania wielowątkowych algorytmów AI
+        _currentScene?.OnUnload(this); 
         _renderer.Dispose();
+        _telemetryClient.Close();
+        Environment.Exit(0);
     }
 
     public void Run(string[] args)
     {
-        // OFICERSKA KOREKTA PRZEPŁYWU STEROWANIA: Obsługa trybów zautomatyzowanych
-        if (args.Contains("--benchmark")) { RunBenchmark(1000); return; }
-        if (args.Contains("--fuzz-mode")) { RunFuzzing(50000); return; }
-        if (args.Contains("--stress-test")) { RunStressTest(30); return; }
+        var argsList = args.ToList();
 
+        int benchIdx = argsList.IndexOf("--benchmark");
+        if (benchIdx != -1)
+        {
+            int frames = 1000;
+            if (benchIdx + 1 < argsList.Count && int.TryParse(argsList[benchIdx + 1], out int parsed)) frames = parsed;
+            RunBenchmark(frames);
+            return;
+        }
+
+        int fuzzIdx = argsList.IndexOf("--fuzz-mode");
+        if (fuzzIdx != -1)
+        {
+            int iterations = 50000;
+            if (fuzzIdx + 1 < argsList.Count && int.TryParse(argsList[fuzzIdx + 1], out int parsed)) iterations = parsed;
+            RunFuzzing(iterations);
+            return;
+        }
+
+        int stressIdx = argsList.IndexOf("--stress-test");
+        if (stressIdx != -1)
+        {
+            int seconds = 30;
+            if (stressIdx + 1 < argsList.Count && int.TryParse(argsList[stressIdx + 1], out int parsed)) seconds = parsed;
+            RunStressTest(seconds);
+            return;
+        }
+
+        IsBenchmarkMode = false; 
         Stopwatch stopwatch = Stopwatch.StartNew();
         double lastTime = 0;
         bool isHeadless = Environment.GetEnvironmentVariable("HEADLESS") == "1";
 
         while (isHeadless || _window.Exists)
         {
-            if (_nextScene != null) { _currentScene?.OnUnload(this); _currentScene = _nextScene; _nextScene = null; _currentScene.OnLoad(this); }
-
             double currentTime = stopwatch.Elapsed.TotalSeconds; float deltaTime = (float)(currentTime - lastTime); lastTime = currentTime;
             InputSnapshot snapshot = isHeadless ? null : _window.PumpEvents();
             if (!isHeadless && !_window.Exists) break;
@@ -150,73 +302,23 @@ public class GameEngine
             }
             else { if (!isHeadless) _window.CursorVisible = true; _world.MouseDelta = Vector2.Zero; }
 
-            // === 1. FAZA LOGIKI (CPU) ===
-            _world.UpdateLogicStats(deltaTime);
-            _currentScene?.OnUpdate(deltaTime, snapshot, this);
-
-            if (_currentScene != null)
-            {
-                for (int i = 0; i < _currentScene.GameObjects.Count; i++)
-                    if (!_currentScene.GameObjects[i].IsDestroyed) _currentScene.GameObjects[i].Update(deltaTime);
-                _currentScene.GameObjects.RemoveAll(o => o.IsDestroyed);
-            }
-
-            // === 2. FAZA PRZYGOTOWANIA DANYCH RENDEROWANIA ===
-            _world.Data.GpuDrawCalls = 0; _world.Data.GpuVertices = 0;
-            _world.PrepareNextFrame(currentTime);
-            
-            if (ShowGameplayHud)
-            {
-                float viewDist = SystemConfig.GraphicsQuality switch { 0 => 16f, 1 => 24f, 2 => 36f, _ => 24f };
-                float fXStart = MathF.Floor(CameraPosition.X / 2f) * 2f - viewDist; float fXEnd = MathF.Floor(CameraPosition.X / 2f) * 2f + viewDist;
-                float fZStart = MathF.Floor(CameraPosition.Z / 2f) * 2f - viewDist; float fZEnd = MathF.Floor(CameraPosition.Z / 2f) * 2f + viewDist;
-                for (float x = fXStart; x <= fXEnd; x += 2f)
-                    for (float z = fZStart; z <= fZEnd; z += 2f) {
-                        DrawHorizontalPlane(x, 0.0f, z, 2f, 2f, 1.0f, 0f, 1f, 0f); DrawHorizontalPlane(x, 2.0f, z, 2f, 2f, 1.0f, 0f, -1f, 0f);
-                    }
-                if (_currentScene != null) foreach (var obj in _currentScene.GameObjects) obj.Render(this);
-            }
-
-            _currentScene?.OnRenderUI(this);
-            RenderInternalHud();
-
-            // UDP Stats (Telemetria)
+            ExecuteEnginePipeline(currentTime, deltaTime, snapshot);
             SendUdpStats();
-
-            // === 3. FAZA RENDEROWANIA (GPU) ===
+            
             _renderer.DrawFrame(_world.Data, _window, Width, Height, ClearColor, isHeadless);
             _world.TriggerMuzzleFlash = false;
+
+            if (!SystemConfig.VSync && SystemConfig.FpsLimit > 0)
+            {
+                double targetFrameTime = 1.0 / SystemConfig.FpsLimit;
+                while (stopwatch.Elapsed.TotalSeconds - lastTime < targetFrameTime) { System.Threading.Thread.Yield(); }
+            }
         }
 
+        // ZMIANA: Zamykanie sceny przy standardowym zakończeniu procesu
+        _currentScene?.OnUnload(this); 
         _renderer.Dispose();
-    }
-
-    private void RunBenchmark(int frameCount)
-    {
-        string profile = SystemConfig.GraphicsQuality switch { 0 => "LOW", 1 => "MED", 2 => "HIGH", _ => "CUSTOM" };
-        Console.WriteLine($"--- [BENCHMARK ZAINICJOWANY: {frameCount} KLATEK | PROFIL: {profile}] ---");
-        Stopwatch sw = Stopwatch.StartNew();
-        float fixedDelta = 1f / 60f;
-        bool isHeadless = Environment.GetEnvironmentVariable("HEADLESS") == "1";
-
-        for (int i = 0; i < frameCount; i++)
-        {
-            _world.PrepareNextFrame(sw.Elapsed.TotalSeconds);
-            _currentScene?.OnUpdate(fixedDelta, null, this);
-            if (_currentScene != null) foreach (var obj in _currentScene.GameObjects) obj.Render(this);
-            
-            _renderer.DrawFrame(_world.Data, _window, Width, Height, ClearColor, isHeadless);
-        }
-        
-        sw.Stop();
-        double avg = sw.Elapsed.TotalMilliseconds / frameCount; double fps = 1000.0 / avg;
-        
-        string res = $"[PROFIL: {profile,-4}] FPS: {fps,6:F1}  |  Sredni czas klatki: {avg,5:F2} ms\n";
-        
-        File.AppendAllText("benchmark_results.txt", res);
-        
-        Console.WriteLine($"--- [WYNIK ODCZYTANY I ZAPISANY DO LOGU] ---");
-        _renderer.Dispose();
+        _telemetryClient.Close();
     }
 
     private void RenderInternalHud()
@@ -237,21 +339,14 @@ public class GameEngine
             DrawHudRectangle(midX - 12, midY - 1, 24, 2, matrixGreen); DrawHudRectangle(midX - 1, midY - 12, 2, 24, matrixGreen);
             DrawHudRectangle(15, Height - 65, 250, 50, new RgbaFloat(0.0f, 0.05f, 0.01f, 0.70f));
             DrawHudText($"ENG: {PlayerEnergy} %", 30, Height - 53, 4f, matrixGreen);
-
-            float gunBaseX = Width - 320f; float gunBaseY = Height - 240f + (WeaponRecoil * 120f);
-            DrawHudRectangle(gunBaseX, gunBaseY, 140, 240, new RgbaFloat(0.05f, 0.15f, 0.08f, 0.95f));
-            DrawHudRectangle(gunBaseX + 20, gunBaseY - 80, 25, 100, new RgbaFloat(0.02f, 0.22f, 0.05f, 1.0f));
-            DrawHudRectangle(gunBaseX + 95, gunBaseY - 80, 25, 100, new RgbaFloat(0.02f, 0.22f, 0.05f, 1.0f));
-            DrawHudRectangle(gunBaseX + 55, gunBaseY - 40, 30, 160, matrixGreen);
-
-            if (WeaponRecoil > 0.15f) { DrawHudRectangle(gunBaseX + 15, gunBaseY - 140, 110, 60, new RgbaFloat(0.5f, 1.0f, 0.6f, 0.8f)); DrawHudRectangle(gunBaseX + 45, gunBaseY - 180, 50, 40, new RgbaFloat(1.0f, 1.0f, 1.0f, 0.9f)); }
         }
     }
 
     private void SendUdpStats()
     {
         string stats = $"{_world.CurrentFps:F1};{_world.CurrentCpuPercent:F1};{_world.RamUsage:F1};{_world.Data.GpuDrawCalls};{_world.Data.GpuVertices}";
-        byte[] data = Encoding.UTF8.GetBytes(stats);
-        using (var client = new System.Net.Sockets.UdpClient()) { client.Send(data, data.Length, "10.0.0.2", 9000); }
+        
+        int bytesWritten = Encoding.UTF8.GetBytes(stats, 0, stats.Length, _udpBuffer, 0);
+        _telemetryClient.Send(_udpBuffer, bytesWritten, "10.0.0.2", 9000);
     }
 }

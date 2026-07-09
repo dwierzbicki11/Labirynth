@@ -1,3 +1,4 @@
+namespace CyberEngine.Core;
 public static class Message
 {
     private static string logo = "CyberEngine";

@@ -1,3 +1,18 @@
+#!/bin/bash
+set -e
+
+mkdir -p Shaders
+cd Shaders
+
+cat << 'EOF' > vertex.vert
+#version 450
+layout(location = 0) in vec3 InsidePos; layout(location = 1) in vec3 InNormal; layout(location = 2) in vec2 InUV; layout(location = 3) in float InMatId;
+layout(set = 0, binding = 0) uniform ViewProjBlock { mat4 u_ViewProj; };
+layout(location = 0) out vec3 v_WorldPos; layout(location = 1) out vec3 v_Normal; layout(location = 2) out vec2 v_UV; layout(location = 3) out float v_MatId;
+void main() { gl_Position = u_ViewProj * vec4(InsidePos, 1.0); v_WorldPos = InsidePos; v_Normal = InNormal; v_UV = InUV; v_MatId = InMatId; }
+EOF
+
+cat << 'EOF' > fragment.frag
 #version 450
 layout(location = 0) in vec3 v_WorldPos; layout(location = 1) in vec3 v_Normal; layout(location = 2) in vec2 v_UV; layout(location = 3) in float v_MatId;
 layout(set = 0, binding = 1) uniform LightBlock { vec4 u_FlashlightPos; vec4 u_FlashlightDir; vec4 u_Lanterns[8]; int u_LanternCount; float u_Time; };
@@ -119,3 +134,60 @@ void main() {
     if (isnan(finalColor.x) || isnan(finalColor.y) || isnan(finalColor.z)) finalColor = vec3(1.0, 0.0, 0.0); 
     FragColor = vec4(finalColor, 1.0);
 }
+EOF
+
+# [Pozostała część skryptu bez zmian - hud_vertex.vert, etc.]
+cat << 'EOF' > hud_vertex.vert
+#version 450
+layout(location = 0) in vec2 InsidePos; layout(location = 1) in vec4 InColor; layout(location = 0) out vec4 v_Color;
+void main() { gl_Position = vec4(InsidePos, 0.0, 1.0); v_Color = InColor; }
+EOF
+
+cat << 'EOF' > hud_fragment.frag
+#version 450
+layout(location = 0) in vec4 v_Color; layout(location = 0) out vec4 FragColor; void main() { FragColor = v_Color; }
+EOF
+
+cat << 'EOF' > post_vertex.vert
+#version 450
+layout(location = 0) out vec2 v_UV;
+void main() {
+    v_UV = vec2((gl_VertexIndex << 1) & 2, gl_VertexIndex & 2);
+    gl_Position = vec4(v_UV * 2.0f - 1.0f, 0.0f, 1.0f);
+}
+EOF
+
+cat << 'EOF' > post_fragment.frag
+#version 450 
+layout(location = 0) in vec2 v_UV; 
+layout(set = 0, binding = 0) uniform texture2D u_ScreenTex; 
+layout(set = 0, binding = 1) uniform sampler u_Sampler; 
+layout(location = 0) out vec4 FragColor; 
+vec3 ACESFilm(vec3 x) { 
+    float a = 2.51f; float b = 0.03f; float c = 2.43f; float d = 0.59f; float e = 0.14f; 
+    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0); 
+} 
+void main() { 
+    vec3 col = texture(sampler2D(u_ScreenTex, u_Sampler), v_UV).rgb; 
+    if (isnan(col.x) || isnan(col.y) || isnan(col.z)) col = vec3(0.0);
+    col = ACESFilm(col); 
+    col = pow(max(col, 0.0), vec3(1.0 / 2.2)); 
+    FragColor = vec4(col, 1.0);
+} 
+EOF
+
+echo "Rozpoczynam kompilacje..."
+glslangValidator -V vertex.vert -o vertex.spv
+glslangValidator -V fragment.frag -o fragment.spv
+glslangValidator -V hud_vertex.vert -o hud_vertex.spv
+glslangValidator -V hud_fragment.frag -o hud_fragment.spv
+glslangValidator -V post_vertex.vert -o post_vertex.spv
+glslangValidator -V post_fragment.frag -o post_fragment.spv
+
+echo "Kompilacja pomyslna. Kopiowanie plikow..."
+cd ../
+mkdir -p bin/Debug/net11.0/Shaders/
+mkdir -p bin/Debug/net11.0/Models/
+cp -vu Shaders/*.spv bin/Debug/net11.0/Shaders/
+cp -vu Models/*.gguf bin/Debug/net11.0/Models/
+echo "Gotowe!"

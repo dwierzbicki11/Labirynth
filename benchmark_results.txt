@@ -1,0 +1,5 @@
+[PROFIL: LOW ] FPS:   45.5  |  Sredni czas klatki: 21.96 ms
+[PROFIL: LOW ] FPS:   44.6  |  Sredni czas klatki: 22.41 ms
+[PROFIL: LOW ] FPS:   46.2  |  Sredni czas klatki: 21.67 ms
+[PROFIL: LOW ] FPS:   45.0  |  Sredni czas klatki: 22.23 ms
+[PROFIL: LOW ] FPS:   43.4  |  Sredni czas klatki: 23.06 ms
