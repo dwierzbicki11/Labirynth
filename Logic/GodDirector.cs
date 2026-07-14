@@ -44,7 +44,7 @@ public class GodDirector : IDisposable
                 
                 var modelParams = new ModelParams("Models/Phi-3-mini-4k-instruct-Q4_K_M.gguf") 
                 { 
-                    ContextSize = 128, 
+                    ContextSize = 1024, 
                     GpuLayerCount = gpuLayers, 
                     Threads = optimalThreads 
                 };

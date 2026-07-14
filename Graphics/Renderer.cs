@@ -45,12 +45,13 @@ public class Renderer : IDisposable
         bool isHeadless = Environment.GetEnvironmentVariable("HEADLESS") == "1";
         
         GraphicsDeviceOptions options = new GraphicsDeviceOptions {
-            Debug = false, 
+            Debug = false, // KROK 2: KRYTYCZNE - musi być false, inaczej Veldrid wymusza ładowanie Vulkan SDK
             HasMainSwapchain = !isHeadless,
             SyncToVerticalBlank = false, 
             SwapchainDepthFormat = isHeadless ? null : PixelFormat.D24_UNorm_S8_UInt
         };
 
+        // KROK 3: Bezpieczna inicjalizacja przez VeldridStartup
         Device = !isHeadless ? VeldridStartup.CreateGraphicsDevice(window, options, backend) : GraphicsDevice.CreateVulkan(options);
         
         _commandList = Device.ResourceFactory.CreateCommandList();

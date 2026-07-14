@@ -1,3 +1,5 @@
+#nullable disable
+
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -27,6 +29,11 @@ public class GameScene : Scene
     
     private GodDirector _director;
     private AgentInferenceService _agentService;
+
+    // --- NOWE: Izolowany system śledzenia FPS ---
+    private float _fpsTimer = 0f;
+    private int _frameCount = 0;
+    private int _currentFps = 0;
 
     private bool IsJustPressed(Key key)
     {
@@ -76,7 +83,6 @@ public class GameScene : Scene
         }
     }
 
-    // ZMIANA: Zgodna sygnatura (GameEngine engine) i integracja bezpiecznego wyłączania AI
     public override void OnUnload(GameEngine engine)
     {
         Console.WriteLine("[SYSTEM] Inicjowanie procedury bezpiecznego zamykania AI...");
@@ -96,7 +102,6 @@ public class GameScene : Scene
                 Console.WriteLine("[OSTRZEŻENIE] Wątek AI jest zajęty generowaniem odpowiedzi. Pomijam destrukcję wskaźników C++ aby zapobiec zakleszczeniu głównej pętli.");
             }
             
-            // Wywołanie bazowe - czyści GameObjects
             base.OnUnload(engine);
         }
         finally
@@ -111,6 +116,16 @@ public class GameScene : Scene
 
     public override void OnUpdate(double deltaTime, InputSnapshot snapshot, GameEngine engine)
     {
+        // --- NOWE: Aktualizacja licznika klatek ---
+        _fpsTimer += (float)deltaTime;
+        _frameCount++;
+        if (_fpsTimer >= 1.0f)
+        {
+            _currentFps = _frameCount;
+            _frameCount = 0;
+            _fpsTimer -= 1.0f;
+        }
+
         _director?.Update((float)deltaTime);
 
         if (!engine.IsBenchmarkMode)
@@ -603,6 +618,13 @@ public class GameScene : Scene
     {
         if (!engine.IsBenchmarkMode)
         {
+            // --- NOWE: Rysowanie telemetrii wydajnościowej (Prawy górny róg) ---
+            engine.DrawHudText($"FPS: {_currentFps}", engine.Width - 150, 25, 3f, new RgbaFloat(0.0f, 1.0f, 0.2f, 1.0f));
+            
+            // Odpytanie silnika o fizyczny układ graficzny
+            engine.DrawHudText($"GPU: {engine.GpuName}", engine.Width - 450, 55, 3f, new RgbaFloat(0.0f, 1.0f, 0.2f, 1.0f));
+
+            // Statystyki logiczne (Lewa strona)
             engine.DrawHudText($"WARSTWA SIECI: {_currentLevel}", 25, 250, 3f, new RgbaFloat(0.0f, 1.0f, 0.2f, 1.0f));
             engine.DrawHudText($"PAKIETY DANYCH: {_zebranePakiety} / {_currentLevel * 5}", 25, 280, 3f, new RgbaFloat(0.0f, 1.0f, 0.2f, 1.0f));
             

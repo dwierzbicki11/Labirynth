@@ -45,6 +45,8 @@ public class GameEngine
     public float Height => SystemConfig.ResolutionHeight;
     public RgbaFloat ClearColor { get; set; } = RgbaFloat.Black;
     public string GpuName => _renderer.Device?.DeviceName ?? "Headless GPU";
+    public string TelemetryTargetIp { get; set; } = "127.0.0.1";
+    
 
     public void LoadScene(Scene scene) { _nextScene = scene; }
     public void RegisterLantern(Vector3 position) { _world.RegisterLantern(position); }
@@ -149,7 +151,6 @@ public class GameEngine
         }
 
         _currentScene?.OnRenderUI(this);
-        RenderInternalHud();
     }
     
     private void RunStressTest(int seconds)
@@ -169,7 +170,6 @@ public class GameEngine
         sw.Stop();
         Console.WriteLine($"--- [STRESS TEST ZAKOŃCZONY POMYŚLNIE] ---");
         
-        // ZMIANA: Zamykanie systemów AI przed usunięciem renderera
         _currentScene?.OnUnload(this); 
         _renderer.Dispose();
         _telemetryClient.Close();
@@ -203,7 +203,6 @@ public class GameEngine
         sw.Stop();
         Console.WriteLine($"--- [FUZZING ZAKOŃCZONY. Czas całkowity: {sw.Elapsed.TotalSeconds:F2}s. Stabilność: 100%] ---");
         
-        // ZMIANA: Bezpieczne zwolnienie sceny
         _currentScene?.OnUnload(this); 
         _renderer.Dispose();
         _telemetryClient.Close();
@@ -245,7 +244,6 @@ public class GameEngine
         
         Console.WriteLine($"--- [WYNIK ODCZYTANY I ZAPISANY DO LOGU] ---");
         
-        // ZMIANA: Wymuszenie zatrzymania wielowątkowych algorytmów AI
         _currentScene?.OnUnload(this); 
         _renderer.Dispose();
         _telemetryClient.Close();
@@ -315,38 +313,17 @@ public class GameEngine
             }
         }
 
-        // ZMIANA: Zamykanie sceny przy standardowym zakończeniu procesu
         _currentScene?.OnUnload(this); 
         _renderer.Dispose();
         _telemetryClient.Close();
     }
 
-    private void RenderInternalHud()
-    {
-        RgbaFloat matrixGreen = new RgbaFloat(0.0f, 1.0f, 0.2f, 1.0f); RgbaFloat darkGreen = new RgbaFloat(0.0f, 0.25f, 0.05f, 1.0f);
-        DrawHudRectangle(15, 15, 360, 205, new RgbaFloat(0.0f, 0.05f, 0.01f, 0.70f));
-        DrawHudText($"FPS: {_world.CurrentFps:F0}", 25, 25, 3f, matrixGreen);
-        DrawHudText($"CPU: {_world.CurrentCpuPercent:F1} %", 25, 55, 3f, matrixGreen);
-        DrawHudRectangle(25, 75, 340, 6, darkGreen);
-        DrawHudRectangle(25, 75, Math.Clamp((float)(_world.CurrentCpuPercent / 100.0 * 340.0), 0f, 340f), 6, matrixGreen);
-        DrawHudText($"RAM: {_world.RamUsage:F0} MB", 25, 90, 3f, matrixGreen);
-        DrawHudText($"GPU DC: {_world.Data.GpuDrawCalls}", 25, 120, 3f, matrixGreen);
-        DrawHudText($"GPU POLY: {_world.Data.GpuVertices}", 25, 150, 3f, matrixGreen);
-
-        if (ShowGameplayHud)
-        {
-            float midX = Width / 2f; float midY = Height / 2f;
-            DrawHudRectangle(midX - 12, midY - 1, 24, 2, matrixGreen); DrawHudRectangle(midX - 1, midY - 12, 2, 24, matrixGreen);
-            DrawHudRectangle(15, Height - 65, 250, 50, new RgbaFloat(0.0f, 0.05f, 0.01f, 0.70f));
-            DrawHudText($"ENG: {PlayerEnergy} %", 30, Height - 53, 4f, matrixGreen);
-        }
-    }
+    
 
     private void SendUdpStats()
     {
         string stats = $"{_world.CurrentFps:F1};{_world.CurrentCpuPercent:F1};{_world.RamUsage:F1};{_world.Data.GpuDrawCalls};{_world.Data.GpuVertices}";
-        
         int bytesWritten = Encoding.UTF8.GetBytes(stats, 0, stats.Length, _udpBuffer, 0);
-        _telemetryClient.Send(_udpBuffer, bytesWritten, "10.0.0.2", 9000);
+        _telemetryClient.Send(_udpBuffer, bytesWritten, TelemetryTargetIp, 9000);
     }
 }

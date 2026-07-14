@@ -1,111 +1,130 @@
 #!/bin/bash
-#set -e 
+# ==============================================================================
+# CYBERENGINE: PEŁNY PROTOKÓŁ (19 WEKTORÓW) - CZYSTA ARCHITEKTURA ZDALNA (SSH)
+# ==============================================================================
 
-# Konfiguracja środowiska
-LOCAL_PATH="/home/zonderq/Labirynth"
-REMOTE_PATH="/home/zonderq/Labirynth"
-RPi_USER="zonderq"
-RPi_HOST="10.0.0.2"
-DOTNET_PATH="/home/zonderq/.dotnet/dotnet"
+LAPTOP="10.0.0.3"
+RPI="10.0.0.2"
 
-# Opcje SSH zapobiegające zerwaniu sesji pod maksymalnym obciążeniem SoC
-SSH_OPTS="-o ServerAliveInterval=15 -o ServerAliveCountMax=4"
+PATH_X64="/home/zonderq/Labirynth/bin/Release/net11.0/linux-x64/publish/CyberEngine"
+PATH_ARM="/home/zonderq/Labirynth/bin/Release/net11.0/linux-arm64/publish/CyberEngine"
 
-echo "========================================================"
-echo "--- FABRYKA: Rozpoczęto pełny cykl produkcyjny (AI-Optimized) ---"
-echo "========================================================"
+LOG_DIR="test_results_19_$(date +%Y%m%d_%H%M%S)"
+mkdir -p $LOG_DIR
 
-echo ">>> [1/19] Synchronizacja kodu źródłowego..."
-rsync -avz --delete --exclude 'bin' --exclude 'obj' --exclude '.git' "$LOCAL_PATH/" "$RPi_USER@$RPi_HOST:$REMOTE_PATH/"
+# ------------------------------------------------------------------------------
+# WSTRZYKIWANIE ZMIENNYCH ŚRODOWISKOWYCH (Rozwiązanie błędu .NET na SSH)
+# ------------------------------------------------------------------------------
+DOTNET_ENV="export DOTNET_ROOT=/home/zonderq/.dotnet; export PATH=\$PATH:/home/zonderq/.dotnet"
 
-echo ">>> [2/19] Kompilacja shaderów na maszynie zdalnej (RPi)..."
-ssh $SSH_OPTS $RPi_USER@$RPi_HOST "cd $REMOTE_PATH && chmod +x CompileShaders.sh && ./CompileShaders.sh"
+HEADLESS_ENV="export HEADLESS=1; $DOTNET_ENV"
+X64_ENV="export DISPLAY=:0; $DOTNET_ENV"
+# Poprawiono ścieżkę autoryzacji X11 dla użytkownika zonderq na malince
+RPI_ENV="export DISPLAY=:0; export XAUTHORITY=/home/zonderq/.Xauthority; export XDG_RUNTIME_DIR=/run/user/1000; $DOTNET_ENV"
 
-echo ">>> [3/19] Transfer zwrotny (Pull) skompilowanych plików .spv na stację lokalną..."
-rsync -avz "$RPi_USER@$RPi_HOST:$REMOTE_PATH/Shaders/*.spv" "$LOCAL_PATH/Shaders/"
+echo ">>> ROZPOCZĘCIE 19-STOPNIOWEJ PROCEDURY TESTOWEJ (100% SSH) <<<"
 
-echo ">>> [4/19] Audyt cyberbezpieczeństwa: Skanowanie podatności CVE w zależnościach NuGet..."
-ssh $SSH_OPTS $RPi_USER@$RPi_HOST "cd $REMOTE_PATH && $DOTNET_PATH list package --vulnerable"
+# --- SEKCJA I: CZYSTA WYDAJNOŚĆ OBLICZENIOWA (HEADLESS) ---
+echo "[Test 1/19] Benchmark Logiki (5000 klatek)"
+ssh zonderq@$RPI "$HEADLESS_ENV; $PATH_ARM --benchmark 5000" > "$LOG_DIR/test_1_rpi.log" 2>&1 &
+ssh zonderq@$LAPTOP "$HEADLESS_ENV; $PATH_X64 --benchmark 5000" > "$LOG_DIR/test_1_x64.log" 2>&1 &
+wait
 
-echo ">>> [5/19] Budowanie nowej wersji silnika (Release)..."
-ssh $SSH_OPTS $RPi_USER@$RPi_HOST "$DOTNET_PATH build $REMOTE_PATH/CyberEngine.csproj -c Release"
+echo "[Test 2/19] Stress Test CPU (30 sekund)"
+ssh zonderq@$RPI "$HEADLESS_ENV; $PATH_ARM --stress-test 30" > "$LOG_DIR/test_2_rpi.log" 2>&1 &
+ssh zonderq@$LAPTOP "$HEADLESS_ENV; $PATH_X64 --stress-test 30" > "$LOG_DIR/test_2_x64.log" 2>&1 &
+wait
 
-echo ">>> [6/19] Testy jednostkowe podsystemu logicznego (Logika)..."
-ssh $SSH_OPTS $RPi_USER@$RPi_HOST "$DOTNET_PATH test $REMOTE_PATH/CyberEngine.csproj --configuration Release"
+echo "[Test 3/19] Fuzzing Pamięci (50000 iteracji)"
+ssh zonderq@$RPI "$HEADLESS_ENV; $PATH_ARM --fuzz-mode 50000" > "$LOG_DIR/test_3_rpi.log" 2>&1 &
+ssh zonderq@$LAPTOP "$HEADLESS_ENV; $PATH_X64 --fuzz-mode 50000" > "$LOG_DIR/test_3_x64.log" 2>&1 &
+wait
 
-echo ">>> [7/19] Diagnostyka GPU: Czyszczenie logów benchmarku..."
-ssh $SSH_OPTS $RPi_USER@$RPi_HOST "cd $REMOTE_PATH && rm -f benchmark_results.txt"
+# --- SEKCJA II: SKALOWANIE PRESETÓW GRAFICZNYCH (OBA WĘZŁY) ---
+echo "[Test 4/19] Render: Preset LOW (2000 klatek)"
+ssh zonderq@$RPI "$RPI_ENV; $PATH_ARM --benchmark 2000 --preset low" > "$LOG_DIR/test_4_rpi.log" 2>&1 &
+ssh zonderq@$LAPTOP "$X64_ENV; $PATH_X64 --benchmark 2000 --preset low" > "$LOG_DIR/test_4_x64.log" 2>&1 &
+wait
 
-# WYBUDZENIE EKRANU I ZDJĘCIE BLOKADY ENERGETYCZNEJ (DPMS)
-echo "   -> [SYSTEM] Wybudzanie bufora ramki i wyłączanie DPMS na węźle..."
-ssh $SSH_OPTS $RPi_USER@$RPi_HOST "export DISPLAY=:0; export XAUTHORITY=/home/$RPi_USER/.Xauthority; xset dpms force on; xset s noblank; xset s off; xset -dpms" || echo "   -> [OSTRZEŻENIE] Brak aktywnej sesji X11..."
+echo "[Test 5/19] Render: Preset MED (2000 klatek)"
+ssh zonderq@$RPI "$RPI_ENV; $PATH_ARM --benchmark 2000 --preset med" > "$LOG_DIR/test_5_rpi.log" 2>&1 &
+ssh zonderq@$LAPTOP "$X64_ENV; $PATH_X64 --benchmark 2000 --preset med" > "$LOG_DIR/test_5_x64.log" 2>&1 &
+wait
 
-# ZREDUKOWANA MACIERZ TESTOWA (Skupiona na stabilności rdzenia graficznego przy obciążeniu AI)
-VECTORS=(
-    "--preset low --vsync 0" 
-    "--resolution 1024x768 --preset low --vsync 0"
-    "--resolution 1024x768 --render-scale 0.5 --quality 0 --vsync 0"
-    "--preset low --draw-distance 64.0 --fov 90.0 --vsync 0"
-    "--vsync 1 --fps-limit 30 --preset low"
-)
+echo "[Test 6/19] Render: Preset HIGH (2000 klatek)"
+ssh zonderq@$RPI "$RPI_ENV; $PATH_ARM --benchmark 2000 --preset high" > "$LOG_DIR/test_6_rpi.log" 2>&1 &
+ssh zonderq@$LAPTOP "$X64_ENV; $PATH_X64 --benchmark 2000 --preset high" > "$LOG_DIR/test_6_x64.log" 2>&1 &
+wait
 
-echo ">>> [8/19] Rozpoczęcie iteracji wektorów GPU (Low-Profile)..."
-for i in "${!VECTORS[@]}"; do
-    ARGS="${VECTORS[$i]}"
-    echo "   -> Wektor [$((i+1))/${#VECTORS[@]}]: $ARGS"
-    
-    ssh $SSH_OPTS $RPi_USER@$RPi_HOST "pkill -9 -f '[C]yberEngine' || true"
-    
-    ssh $SSH_OPTS $RPi_USER@$RPi_HOST "export DISPLAY=:0; export XAUTHORITY=/home/$RPi_USER/.Xauthority; export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/broadcom_icd.json; export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1; cd $REMOTE_PATH && flock -x -w 10 /tmp/cyberengine.lock $DOTNET_PATH exec bin/Release/net11.0/CyberEngine.dll --benchmark 5000 $ARGS"
-done
+# --- SEKCJA III: TESTY ROZDZIELCZOŚCI I RENDER SCALE (OBA WĘZŁY) ---
+echo "[Test 7/19] Rozdzielczość: 800x600 LOW"
+ssh zonderq@$RPI "$RPI_ENV; $PATH_ARM --benchmark 2000 --resolution 800x600 --preset low" > "$LOG_DIR/test_7_rpi.log" 2>&1 &
+ssh zonderq@$LAPTOP "$X64_ENV; $PATH_X64 --benchmark 2000 --resolution 800x600 --preset low" > "$LOG_DIR/test_7_x64.log" 2>&1 &
+wait
 
-echo ">>> [9/19] Raport Benchmarków..."
-ssh $SSH_OPTS $RPi_USER@$RPi_HOST "cat $REMOTE_PATH/benchmark_results.txt"
+echo "[Test 8/19] Rozdzielczość: 1920x1080 HIGH"
+ssh zonderq@$RPI "$RPI_ENV; $PATH_ARM --benchmark 2000 --resolution 1920x1080 --preset high" > "$LOG_DIR/test_8_rpi.log" 2>&1 &
+ssh zonderq@$LAPTOP "$X64_ENV; $PATH_X64 --benchmark 2000 --resolution 1920x1080 --preset high" > "$LOG_DIR/test_8_x64.log" 2>&1 &
+wait
 
-echo ">>> [10/19] Fuzzing (Pojedyncza Instancja - Wektor AI)..."
-ssh $SSH_OPTS $RPi_USER@$RPi_HOST "pkill -9 -f '[C]yberEngine' || true"
-ssh $SSH_OPTS $RPi_USER@$RPi_HOST "export DISPLAY=:0; export XAUTHORITY=/home/$RPi_USER/.Xauthority; cd $REMOTE_PATH && flock -x -w 10 /tmp/cyberengine.lock $DOTNET_PATH exec bin/Release/net11.0/CyberEngine.dll --fuzz-mode 5000"
+echo "[Test 9/19] Render Scale: 0.5"
+ssh zonderq@$RPI "$RPI_ENV; $PATH_ARM --benchmark 2000 --render-scale 0.5" > "$LOG_DIR/test_9_rpi.log" 2>&1 &
+ssh zonderq@$LAPTOP "$X64_ENV; $PATH_X64 --benchmark 2000 --render-scale 0.5" > "$LOG_DIR/test_9_x64.log" 2>&1 &
+wait
 
-echo ">>> [11/19] Stress-Test GPU (Pojedyncza Instancja)..."
-ssh $SSH_OPTS $RPi_USER@$RPi_HOST "pkill -9 -f '[C]yberEngine' || true"
-ssh $SSH_OPTS $RPi_USER@$RPi_HOST "export DISPLAY=:0; export XAUTHORITY=/home/$RPi_USER/.Xauthority; cd $REMOTE_PATH && flock -x -w 10 /tmp/cyberengine.lock $DOTNET_PATH exec bin/Release/net11.0/CyberEngine.dll --stress-test 10"
+# --- SEKCJA IV: KONTROLA SYNCHRONIZACJI (OBA WĘZŁY) ---
+echo "[Test 10/19] VSync: ON"
+ssh zonderq@$RPI "$RPI_ENV; $PATH_ARM --benchmark 2000 --vsync 1" > "$LOG_DIR/test_10_rpi.log" 2>&1 &
+ssh zonderq@$LAPTOP "$X64_ENV; $PATH_X64 --benchmark 2000 --vsync 1" > "$LOG_DIR/test_10_x64.log" 2>&1 &
+wait
 
-echo ">>> [12/19] Multi-Instance Stress-Test CPU (2x Headless Concurrent Execution)..."
-# Redukcja z 4x do 2x instancji. 4x Phi-3 załadowane do RAM wywoła OOM Panic i zresetuje malinę.
-ssh $SSH_OPTS $RPi_USER@$RPi_HOST "pkill -9 -f '[C]yberEngine' || true"
-ssh $SSH_OPTS $RPi_USER@$RPi_HOST "export HEADLESS=1; export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1; cd $REMOTE_PATH && \
-    ($DOTNET_PATH exec bin/Release/net11.0/CyberEngine.dll --stress-test 15 & \
-     $DOTNET_PATH exec bin/Release/net11.0/CyberEngine.dll --stress-test 15 & \
-     wait)"
+echo "[Test 11/19] VSync: OFF"
+ssh zonderq@$RPI "$RPI_ENV; $PATH_ARM --benchmark 2000 --vsync 0" > "$LOG_DIR/test_11_rpi.log" 2>&1 &
+ssh zonderq@$LAPTOP "$X64_ENV; $PATH_X64 --benchmark 2000 --vsync 0" > "$LOG_DIR/test_11_x64.log" 2>&1 &
+wait
 
-echo ">>> [13/19] GOD-BOT TACTICAL TEST (100k Klatek)..."
-# Właściwy test wytrzymałościowy modelu Phi-3, bota nawigacyjnego i zarządcy L1
-ssh $SSH_OPTS $RPi_USER@$RPi_HOST "pkill -9 -f '[C]yberEngine' || true"
-ssh $SSH_OPTS $RPi_USER@$RPi_HOST "export HEADLESS=1; cd $REMOTE_PATH && flock -x -w 10 /tmp/cyberengine.lock $DOTNET_PATH exec bin/Release/net11.0/CyberEngine.dll --ai-test --benchmark 100000 --preset low --vsync 0"
+echo "[Test 12/19] FPS Limit: 30 FPS"
+ssh zonderq@$RPI "$RPI_ENV; $PATH_ARM --benchmark 1000 --vsync 0 --fps-limit 30" > "$LOG_DIR/test_12_rpi.log" 2>&1 &
+ssh zonderq@$LAPTOP "$X64_ENV; $PATH_X64 --benchmark 1000 --vsync 0 --fps-limit 30" > "$LOG_DIR/test_12_x64.log" 2>&1 &
+wait
 
-echo ">>> [14/19] Kompilacja paczki samowystarczalnej (Publish)..."
-ssh $SSH_OPTS $RPi_USER@$RPi_HOST "$DOTNET_PATH publish $REMOTE_PATH/CyberEngine.csproj -c Release -r linux-arm64 --self-contained true"
+echo "[Test 13/19] FPS Limit: 60 FPS"
+ssh zonderq@$RPI "$RPI_ENV; $PATH_ARM --benchmark 1000 --vsync 0 --fps-limit 60" > "$LOG_DIR/test_13_rpi.log" 2>&1 &
+ssh zonderq@$LAPTOP "$X64_ENV; $PATH_X64 --benchmark 1000 --vsync 0 --fps-limit 60" > "$LOG_DIR/test_13_x64.log" 2>&1 &
+wait
 
-# ====================================================================
-# SEKCJA: POST-PRODUKCJA I DYSTRYBUCJA
-# ====================================================================
+# --- SEKCJA V: ZAAWANSOWANE FUNKCJE VULKANA (OBA WĘZŁY) ---
+echo "[Test 14/19] Cienie: OFF"
+ssh zonderq@$RPI "$RPI_ENV; $PATH_ARM --benchmark 2000 --shadows 0" > "$LOG_DIR/test_14_rpi.log" 2>&1 &
+ssh zonderq@$LAPTOP "$X64_ENV; $PATH_X64 --benchmark 2000 --shadows 0" > "$LOG_DIR/test_14_x64.log" 2>&1 &
+wait
 
-echo ">>> [15/19] Izolacja środowiska produkcyjnego (Deployment)..."
-ssh $SSH_OPTS $RPi_USER@$RPi_HOST "rm -rf $REMOTE_PATH/ProdBuild && mkdir -p $REMOTE_PATH/ProdBuild && cp -a $REMOTE_PATH/bin/Release/net11.0/linux-arm64/publish/. $REMOTE_PATH/ProdBuild/ && cp -r $REMOTE_PATH/Models $REMOTE_PATH/ProdBuild/ && cp -r $REMOTE_PATH/Shaders $REMOTE_PATH/ProdBuild/"
-echo ">>> [16/19] Nadawanie uprawnień wykonawczych binarce..."
-ssh $SSH_OPTS $RPi_USER@$RPi_HOST "chmod +x $REMOTE_PATH/ProdBuild/CyberEngine"
+echo "[Test 15/19] Cienie: ON"
+ssh zonderq@$RPI "$RPI_ENV; $PATH_ARM --benchmark 2000 --shadows 1" > "$LOG_DIR/test_15_rpi.log" 2>&1 &
+ssh zonderq@$LAPTOP "$X64_ENV; $PATH_X64 --benchmark 2000 --shadows 1" > "$LOG_DIR/test_15_x64.log" 2>&1 &
+wait
 
-echo ">>> [17/19] Test dymny (Smoke Test) natywnego pliku wykonywalnego..."
-ssh $SSH_OPTS $RPi_USER@$RPi_HOST "pkill -9 -f '[C]yberEngine' || true"
-ssh $SSH_OPTS $RPi_USER@$RPi_HOST "export DISPLAY=:0; export XAUTHORITY=/home/$RPi_USER/.Xauthority; cd $REMOTE_PATH/ProdBuild && flock -x -w 10 /tmp/cyberengine.lock ./CyberEngine --benchmark 10 --preset low"
+echo "[Test 16/19] Post-Processing: Bloom i AO OFF"
+ssh zonderq@$RPI "$RPI_ENV; $PATH_ARM --benchmark 2000 --bloom 0 --ao 0" > "$LOG_DIR/test_16_rpi.log" 2>&1 &
+ssh zonderq@$LAPTOP "$X64_ENV; $PATH_X64 --benchmark 2000 --bloom 0 --ao 0" > "$LOG_DIR/test_16_x64.log" 2>&1 &
+wait
 
-echo ">>> [18/19] Archiwizacja paczki dystrybucyjnej (Release TAR)..."
-ssh $SSH_OPTS $RPi_USER@$RPi_HOST "cd $REMOTE_PATH && tar -czf CyberEngine_arm64_latest.tar.gz -C ProdBuild ."
+echo "[Test 17/19] Post-Processing: Bloom i AO ON"
+ssh zonderq@$RPI "$RPI_ENV; $PATH_ARM --benchmark 2000 --bloom 1 --ao 1" > "$LOG_DIR/test_17_rpi.log" 2>&1 &
+ssh zonderq@$LAPTOP "$X64_ENV; $PATH_X64 --benchmark 2000 --bloom 1 --ao 1" > "$LOG_DIR/test_17_x64.log" 2>&1 &
+wait
 
-echo ">>> [19/19] Czyszczenie artefaktów tymczasowych (Wipe /obj i /bin)..."
-ssh $SSH_OPTS $RPi_USER@$RPi_HOST "rm -rf $REMOTE_PATH/bin $REMOTE_PATH/obj $REMOTE_PATH/ProdBuild"
+# --- SEKCJA VI: SYMULACJA POLA WALKI (TESTY ASYMETRYCZNE SYMULTANICZNE) ---
+echo "[Test 18/19] Test Zderzeniowy Alfa"
+ssh zonderq@$RPI "$RPI_ENV; $PATH_ARM --stress-test 45" > "$LOG_DIR/test_18_rpi.log" 2>&1 &
+ssh zonderq@$LAPTOP "$X64_ENV; $PATH_X64 --stress-test 45" > "$LOG_DIR/test_18_x64.log" 2>&1 &
+wait
 
-echo ">>> Zakończono."
-echo "========================================================"
-echo "--- SUKCES: Cykl produkcyjny i testy klastrowe ukończone ---"
-echo "========================================================"
+echo "[Test 19/19] Test Zderzeniowy Omega"
+ssh zonderq@$RPI "$RPI_ENV; $PATH_ARM --fuzz-mode 150000" > "$LOG_DIR/test_19_rpi.log" 2>&1 &
+ssh zonderq@$LAPTOP "$X64_ENV; $PATH_X64 --fuzz-mode 150000" > "$LOG_DIR/test_19_x64.log" 2>&1 &
+wait
+
+echo "=============================================================================="
+echo " PEŁNY PROTOKÓŁ ZAKOŃCZONY. RAPORTY DOSTĘPNE W LOKALNYM FOLDERZE: $LOG_DIR"
+echo "=============================================================================="
