@@ -35,7 +35,8 @@ public class Stalker : GameObject
 
     public override void Update(double deltaTime)
     {
-        _animationTimer += (float)deltaTime;
+        float dt = Math.Clamp((float)deltaTime, 0.0001f, 0.1f);
+        _animationTimer += dt;
 
         if (Target == null || Target.IsDestroyed) return;
 
@@ -44,9 +45,9 @@ public class Stalker : GameObject
         bool canHear = CanHearTarget(dist);
         
         // Logika czujności (słyszenie zwiększa alert)
-        if (canSee) Alertness += (float)deltaTime * 1.5f;
-        else if (canHear) Alertness += (float)deltaTime * 0.8f;
-        else Alertness -= (float)deltaTime * 0.4f;
+        if (canSee) Alertness += dt * 1.5f;
+        else if (canHear) Alertness += dt * 0.8f;
+        else Alertness -= dt * 0.4f;
         Alertness = Math.Clamp(Alertness, 0.0f, 1.0f);
 
         // 2. FSM - Logika stanów
@@ -61,24 +62,34 @@ public class Stalker : GameObject
         switch (CurrentState)
         {
             case AIState.Patrol:
-                _yaw += (float)deltaTime * 0.3f;
+                _yaw += dt * 0.3f;
                 break;
             case AIState.Search:
-                Vector3 searchDir = Vector3.Normalize(_lastKnownPosition - Transform.Position);
-                _yaw = MathF.Atan2(searchDir.X, searchDir.Z);
+                Vector3 searchDelta = _lastKnownPosition - Transform.Position;
+                if (searchDelta.LengthSquared() > 0.000001f)
+                {
+                    Vector3 searchDir = Vector3.Normalize(searchDelta);
+                    _yaw = MathF.Atan2(searchDir.X, searchDir.Z);
+                }
                 break;
             case AIState.Chase:
                 // FLANKOWANIE: Lawirowanie
-                Vector3 toTarget = Vector3.Normalize(_lastKnownPosition - Transform.Position);
+                Vector3 toTargetDelta = _lastKnownPosition - Transform.Position;
+                if (toTargetDelta.LengthSquared() < 0.000001f) break;
+                Vector3 toTarget = Vector3.Normalize(toTargetDelta);
                 Vector3 perp = new Vector3(-toTarget.Z, 0, toTarget.X); 
                 _flankOffset = perp * MathF.Sin(_animationTimer * 2.0f) * 2.0f;
-                MoveTowards(_lastKnownPosition + _flankOffset, 2.5f, deltaTime);
+                MoveTowards(_lastKnownPosition + _flankOffset, 2.5f, dt);
                 break;
             case AIState.Attack:
-                HandleCombat(deltaTime);
+                HandleCombat(dt);
                 // "Teleportacja" / Glitch przy ataku
-                if (new Random().NextDouble() < 0.05)
-                    Transform.Position += Vector3.Normalize(Target.Transform.Position - Transform.Position) * 0.5f;
+                if (Random.Shared.NextDouble() < 0.05)
+                {
+                    Vector3 attackDelta = Target.Transform.Position - Transform.Position;
+                    if (attackDelta.LengthSquared() > 0.000001f)
+                        Transform.Position += Vector3.Normalize(attackDelta) * 0.5f;
+                }
                 break;
         }
     }
@@ -96,15 +107,16 @@ public class Stalker : GameObject
             Core.Message.warning("[ULTIMATE STALKER] Atak krytyczny!");
             AttackCooldown = 1.0f;
         }
-        AttackCooldown -= (float)dt;
+        AttackCooldown = MathF.Max(0f, AttackCooldown - (float)dt);
     }
 
     private bool CanSeeTarget(out float dist)
     {
-        Vector3 dirToTarget = Vector3.Normalize(Target.Transform.Position - Transform.Position);
+        Vector3 targetDelta = Target.Transform.Position - Transform.Position;
+        dist = targetDelta.Length();
+        if (dist < 0.000001f) return true;
+        Vector3 dirToTarget = targetDelta / dist;
         Vector3 forward = new Vector3(MathF.Sin(_yaw), 0, MathF.Cos(_yaw));
-        dist = Vector3.Distance(Transform.Position, Target.Transform.Position);
-        
         if (dist > DetectionRange) return false;
         if (Vector3.Dot(forward, dirToTarget) < FOV) return false;
 
@@ -118,7 +130,9 @@ public class Stalker : GameObject
 
     private void MoveTowards(Vector3 targetPos, float speed, double dt)
     {
-        Vector3 dir = Vector3.Normalize(targetPos - Transform.Position);
+        Vector3 delta = targetPos - Transform.Position;
+        if (delta.LengthSquared() < 0.000001f) return;
+        Vector3 dir = Vector3.Normalize(delta);
         Transform.Position += dir * speed * (float)dt;
         _yaw = MathF.Atan2(dir.X, dir.Z);
     }
@@ -127,8 +141,8 @@ public class Stalker : GameObject
     {
         // 1. Drżenie (Jitter)
         float jitterIntensity = (CurrentState == AIState.Attack) ? 0.08f : 0.02f;
-        float jitterX = (float)(new Random().NextDouble() - 0.5) * jitterIntensity;
-        float jitterZ = (float)(new Random().NextDouble() - 0.5) * jitterIntensity;
+        float jitterX = (float)(Random.Shared.NextDouble() - 0.5) * jitterIntensity;
+        float jitterZ = (float)(Random.Shared.NextDouble() - 0.5) * jitterIntensity;
         
         float hover = MathF.Sin(_animationTimer * 3.0f) * 0.1f;
         Vector3 basePos = Transform.Position + new Vector3(jitterX, 0.5f + hover, jitterZ);

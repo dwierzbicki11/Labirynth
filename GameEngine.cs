@@ -10,6 +10,7 @@ using System.IO;
 using Veldrid;
 using Veldrid.Sdl2;
 using Veldrid.StartupUtilities;
+using Silk.NET.Core;
 using CyberEngine.Core;
 using CyberEngine.Graphics;
 using CyberEngine.Logic;
@@ -21,15 +22,19 @@ public class GameEngine
 {
     private Sdl2Window _window;
     private readonly World _world = new World();
-    private readonly Renderer _renderer = new Renderer();
+    private readonly IRendererBackend _renderer = CreateRendererBackend();
     private readonly System.Net.Sockets.UdpClient _telemetryClient = new System.Net.Sockets.UdpClient();
     
     private readonly byte[] _udpBuffer = new byte[256];
 
     private Scene _currentScene;
     private Scene _nextScene;
+    private bool _exitRequested;
 
     public bool IsBenchmarkMode { get; set; } = false;
+    public bool ExitRequested => _exitRequested;
+
+    public void RequestExit() => _exitRequested = true;
 
     public Vector3 CameraPosition { get => _world.CameraPosition; set => _world.CameraPosition = value; }
     public float CameraYaw { get => _world.CameraYaw; set => _world.CameraYaw = value; }
@@ -44,9 +49,19 @@ public class GameEngine
     public float Width => SystemConfig.ResolutionWidth;
     public float Height => SystemConfig.ResolutionHeight;
     public RgbaFloat ClearColor { get; set; } = RgbaFloat.Black;
-    public string GpuName => _renderer.Device?.DeviceName ?? "Headless GPU";
+    public string GpuName => _renderer.DeviceName;
     public string TelemetryTargetIp { get; set; } = "127.0.0.1";
     
+
+    private static IRendererBackend CreateRendererBackend()
+    {
+        string selected = Environment.GetEnvironmentVariable("CYBERENGINE_RENDERER")?.Trim().ToLowerInvariant() ?? "veldrid";
+        return selected switch
+        {
+            "vulkan" or "silknetvulkan" => new SilkNetVulkanRendererBackend(),
+            _ => new VeldridRendererBackend()
+        };
+    }
 
     public void LoadScene(Scene scene) { _nextScene = scene; }
     public void RegisterLantern(Vector3 position) { _world.RegisterLantern(position); }
@@ -70,10 +85,15 @@ public class GameEngine
             if (!isHeadless)
             {
                 WindowCreateInfo windowCI = new WindowCreateInfo { X = 0, Y = 0, WindowWidth = width, WindowHeight = height, WindowTitle = title, WindowInitialState = WindowState.FullScreen };
-                _window = VeldridStartup.CreateWindow(ref windowCI);
+                if (_renderer is SilkNetVulkanRendererBackend)
+                    _window = new Sdl2Window(title, 0, 0, width, height, SDL_WindowFlags.Vulkan | SDL_WindowFlags.Fullscreen, false);
+                else
+                    _window = VeldridStartup.CreateWindow(ref windowCI);
             }
 
-            _renderer.Initialize(_window, width, height, backend);
+            _renderer.Initialize(width, height, isHeadless, _window?.SdlWindowHandle ?? nint.Zero);
+            if (_renderer is VeldridRendererBackend veldrid)
+                veldrid.AttachWindow(_window, width, height, backend);
             Console.WriteLine($"[INIT] Silnik gotowy. Architektura Modularna (CPU/GPU) Aktywna.");
         }
         catch (Exception ex)
@@ -164,7 +184,7 @@ public class GameEngine
         while (sw.Elapsed.TotalSeconds < seconds) {
             InputSnapshot snapshot = isHeadless ? null : _window.PumpEvents();
             ExecuteEnginePipeline(sw.Elapsed.TotalSeconds, fixedDelta, snapshot);
-            _renderer.DrawFrame(_world.Data, _window, Width, Height, ClearColor, isHeadless);
+            _renderer.Render(_world.Data, Width, Height, new Vector4(ClearColor.R, ClearColor.G, ClearColor.B, ClearColor.A));
         }
         
         sw.Stop();
@@ -181,11 +201,17 @@ public class GameEngine
         Console.WriteLine($"--- [FUZZING ZAINICJOWANY: {iterations} CYKLI CPU (TRYB EKSTREMALNY - BEZ GRAFIKI)] ---");
         Stopwatch sw = Stopwatch.StartNew(); 
         
-        int logInterval = iterations / 10;
+        iterations = Math.Clamp(iterations, 1, 10_000_000);
+        int logInterval = Math.Max(1, iterations / 10);
 
         for (int i = 0; i < iterations; i++)
         {
-            float corruptDelta = (float)((new Random().NextDouble() * 20.0) - 10.0);
+            float corruptDelta = (float)((Random.Shared.NextDouble() * 20.0) - 10.0);
+            // Fuzzed input intentionally exercises invalid timing, while the engine
+            // remains responsible for clamping simulation time at its public boundary.
+            InputSnapshot randomSnapshot = new FuzzSnapshot(Random.Shared);
+
+            ExecuteEnginePipeline(sw.Elapsed.TotalSeconds, corruptDelta, randomSnapshot);
             
             if (i > 0 && i % logInterval == 0)
             {
@@ -203,7 +229,6 @@ public class GameEngine
         _currentScene?.OnUnload(this); 
         _renderer.Dispose();
         _telemetryClient.Close();
-        Environment.Exit(0);
     }
 
     private void RunBenchmark(int frameCount)
@@ -222,7 +247,7 @@ public class GameEngine
 
             float simTime = i * fixedDelta;
             ExecuteEnginePipeline(simTime, fixedDelta, snapshot);
-            _renderer.DrawFrame(_world.Data, _window, Width, Height, ClearColor, isHeadless);
+            _renderer.Render(_world.Data, Width, Height, new Vector4(ClearColor.R, ClearColor.G, ClearColor.B, ClearColor.A));
 
             if (i > 0 && i % logInterval == 0)
             {
@@ -244,7 +269,7 @@ public class GameEngine
         _currentScene?.OnUnload(this); 
         _renderer.Dispose();
         _telemetryClient.Close();
-        Environment.Exit(0);
+        return;
     }
 
     public void Run(string[] args)
@@ -283,11 +308,13 @@ public class GameEngine
         double lastTime = 0;
         bool isHeadless = Environment.GetEnvironmentVariable("HEADLESS") == "1";
 
-        while (isHeadless || _window.Exists)
+        while (!_exitRequested && (isHeadless || _window.Exists))
         {
-            double currentTime = stopwatch.Elapsed.TotalSeconds; float deltaTime = (float)(currentTime - lastTime); lastTime = currentTime;
+            double currentTime = stopwatch.Elapsed.TotalSeconds;
+            float deltaTime = Math.Clamp((float)(currentTime - lastTime), 0.0001f, 0.1f);
+            lastTime = currentTime;
             InputSnapshot snapshot = isHeadless ? null : _window.PumpEvents();
-            if (!isHeadless && !_window.Exists) break;
+            if (_exitRequested || (!isHeadless && !_window.Exists)) break;
 
             if (!isHeadless && _window.Focused)
             {
@@ -300,7 +327,7 @@ public class GameEngine
             ExecuteEnginePipeline(currentTime, deltaTime, snapshot);
             SendUdpStats();
             
-            _renderer.DrawFrame(_world.Data, _window, Width, Height, ClearColor, isHeadless);
+            _renderer.Render(_world.Data, Width, Height, new Vector4(ClearColor.R, ClearColor.G, ClearColor.B, ClearColor.A));
             _world.TriggerMuzzleFlash = false;
 
             if (!SystemConfig.VSync && SystemConfig.FpsLimit > 0)
