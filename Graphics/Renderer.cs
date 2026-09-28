@@ -119,14 +119,6 @@ public class Renderer : IDisposable
         _commandList.SetPipeline(_postPipeline); _commandList.SetGraphicsResourceSet(0, _postResourceSet); _commandList.Draw(3);
 
         if (data.HudVertexCount > 0) {
-            if (Device.IsClipSpaceYInverted)
-            {
-                for (int i = 0; i < data.HudVertexCount; i++)
-                {
-                    data.HudVertices[i * 6 + 1] = -data.HudVertices[i * 6 + 1]; 
-                }
-            }
-
             fixed (float* ptr = data.HudVertices) { _commandList.UpdateBuffer(_hudVertexBuffer, 0, (IntPtr)ptr, (uint)(data.HudVertexCount * sizeof(float))); }
             _commandList.SetPipeline(_hudPipeline); _commandList.SetVertexBuffer(0, _hudVertexBuffer); _commandList.Draw((uint)(data.HudVertexCount / 6)); data.GpuDrawCalls++;
         }
@@ -149,7 +141,12 @@ public class Renderer : IDisposable
 
     private void CreateOffscreenFramebuffer()
     {
-        if (_offscreenFB != null) { _offscreenFB.Dispose(); _offscreenColor.Dispose(); _offscreenDepth.Dispose(); _offscreenColorView.Dispose(); _postResourceSet.Dispose(); }
+        if (_offscreenFB != null) _offscreenFB.Dispose();
+        if (_offscreenColorView != null) _offscreenColorView.Dispose();
+        if (_offscreenDepthView != null) _offscreenDepthView.Dispose();
+        if (_offscreenColor != null) _offscreenColor.Dispose();
+        if (_offscreenDepth != null) _offscreenDepth.Dispose();
+        if (_postResourceSet != null) _postResourceSet.Dispose();
         uint w = (uint)(SystemConfig.ResolutionWidth * _currentRenderScale); uint h = (uint)(SystemConfig.ResolutionHeight * _currentRenderScale);
         if (w < 1) w = 1; if (h < 1) h = 1;
         _offscreenColor = Device.ResourceFactory.CreateTexture(TextureDescription.Texture2D(w, h, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.RenderTarget | TextureUsage.Sampled));
@@ -259,7 +256,9 @@ public class Renderer : IDisposable
     public void Dispose() {
         _pipeline?.Dispose(); _postPipeline?.Dispose(); _hudPipeline?.Dispose();
         _vertexBuffer?.Dispose(); _viewProjBuffer?.Dispose(); _lightBuffer?.Dispose(); _hudVertexBuffer?.Dispose(); _settingsBuffer?.Dispose();
-        _offscreenFB?.Dispose(); _offscreenColor?.Dispose(); _offscreenDepth?.Dispose(); _wallTexture?.Dispose();
+        _offscreenFB?.Dispose(); _offscreenColorView?.Dispose(); _offscreenDepthView?.Dispose();
+        _offscreenColor?.Dispose(); _offscreenDepth?.Dispose(); _postResourceSet?.Dispose();
+        _resourceSet?.Dispose(); _postResourceLayout?.Dispose(); _wallTextureView?.Dispose(); _wallTexture?.Dispose(); _sampler?.Dispose();
         _commandList?.Dispose(); Device?.Dispose();
     }
 }
