@@ -14,6 +14,6 @@ public interface IRendererBackend : IDisposable
     string DeviceName { get; }
     bool IsInitialized { get; }
 
-    void Initialize(int width, int height, bool headless);
+    void Initialize(int width, int height, bool headless, nint nativeWindowHandle);
     void Render(RenderData data, float width, float height, Vector4 clearColor);
 }
