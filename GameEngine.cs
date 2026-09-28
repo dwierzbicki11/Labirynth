@@ -28,8 +28,12 @@ public class GameEngine
 
     private Scene _currentScene;
     private Scene _nextScene;
+    private bool _exitRequested;
 
     public bool IsBenchmarkMode { get; set; } = false;
+    public bool ExitRequested => _exitRequested;
+
+    public void RequestExit() => _exitRequested = true;
 
     public Vector3 CameraPosition { get => _world.CameraPosition; set => _world.CameraPosition = value; }
     public float CameraYaw { get => _world.CameraYaw; set => _world.CameraYaw = value; }
@@ -246,7 +250,7 @@ public class GameEngine
         _currentScene?.OnUnload(this); 
         _renderer.Dispose();
         _telemetryClient.Close();
-        Environment.Exit(0);
+        return;
     }
 
     public void Run(string[] args)
@@ -285,13 +289,13 @@ public class GameEngine
         double lastTime = 0;
         bool isHeadless = Environment.GetEnvironmentVariable("HEADLESS") == "1";
 
-        while (isHeadless || _window.Exists)
+        while (!_exitRequested && (isHeadless || _window.Exists))
         {
             double currentTime = stopwatch.Elapsed.TotalSeconds;
             float deltaTime = Math.Clamp((float)(currentTime - lastTime), 0.0001f, 0.1f);
             lastTime = currentTime;
             InputSnapshot snapshot = isHeadless ? null : _window.PumpEvents();
-            if (!isHeadless && !_window.Exists) break;
+            if (_exitRequested || (!isHeadless && !_window.Exists)) break;
 
             if (!isHeadless && _window.Focused)
             {
