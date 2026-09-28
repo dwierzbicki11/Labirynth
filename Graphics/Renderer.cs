@@ -22,6 +22,8 @@ public class Renderer : IDisposable
     private Texture _offscreenColor, _offscreenDepth, _wallTexture;
     private TextureView _offscreenColorView, _offscreenDepthView, _wallTextureView;
     private Sampler _sampler;
+    private uint _vertexBufferCapacity;
+    private uint _hudVertexBufferCapacity;
 
     private float _currentRenderScale = 1.0f;
     private int _currentResW = 1280;
@@ -107,6 +109,7 @@ public class Renderer : IDisposable
         _commandList.UpdateBuffer(_lightBuffer, 0, lightData);
 
         if (data.WorldVertexCount > 0) {
+            EnsureVertexBufferCapacity((uint)(data.WorldVertexCount * sizeof(float)));
             fixed (float* ptr = data.WorldVertices) { _commandList.UpdateBuffer(_vertexBuffer, 0, (IntPtr)ptr, (uint)(data.WorldVertexCount * sizeof(float))); }
             _commandList.SetPipeline(_pipeline); _commandList.SetGraphicsResourceSet(0, _resourceSet); _commandList.SetVertexBuffer(0, _vertexBuffer);
             _commandList.Draw((uint)(data.WorldVertexCount / 9)); data.GpuDrawCalls++;
@@ -119,6 +122,7 @@ public class Renderer : IDisposable
         _commandList.SetPipeline(_postPipeline); _commandList.SetGraphicsResourceSet(0, _postResourceSet); _commandList.Draw(3);
 
         if (data.HudVertexCount > 0) {
+            EnsureHudVertexBufferCapacity((uint)(data.HudVertexCount * sizeof(float)));
             fixed (float* ptr = data.HudVertices) { _commandList.UpdateBuffer(_hudVertexBuffer, 0, (IntPtr)ptr, (uint)(data.HudVertexCount * sizeof(float))); }
             _commandList.SetPipeline(_hudPipeline); _commandList.SetVertexBuffer(0, _hudVertexBuffer); _commandList.Draw((uint)(data.HudVertexCount / 6)); data.GpuDrawCalls++;
         }
@@ -157,6 +161,30 @@ public class Renderer : IDisposable
         _postResourceSet = Device.ResourceFactory.CreateResourceSet(new ResourceSetDescription(_postResourceLayout, _offscreenColorView, Device.LinearSampler, _settingsBuffer, _offscreenDepthView));
     }
 
+    private void EnsureVertexBufferCapacity(uint requiredBytes)
+    {
+        if (requiredBytes <= _vertexBufferCapacity) return;
+        uint newCapacity = _vertexBufferCapacity;
+        while (newCapacity < requiredBytes)
+            newCapacity = checked(newCapacity * 2);
+        var replacement = Device.ResourceFactory.CreateBuffer(new BufferDescription(newCapacity, BufferUsage.VertexBuffer));
+        _vertexBuffer?.Dispose();
+        _vertexBuffer = replacement;
+        _vertexBufferCapacity = newCapacity;
+    }
+
+    private void EnsureHudVertexBufferCapacity(uint requiredBytes)
+    {
+        if (requiredBytes <= _hudVertexBufferCapacity) return;
+        uint newCapacity = _hudVertexBufferCapacity;
+        while (newCapacity < requiredBytes)
+            newCapacity = checked(newCapacity * 2);
+        var replacement = Device.ResourceFactory.CreateBuffer(new BufferDescription(newCapacity, BufferUsage.VertexBuffer));
+        _hudVertexBuffer?.Dispose();
+        _hudVertexBuffer = replacement;
+        _hudVertexBufferCapacity = newCapacity;
+    }
+
     private void PrepareGraphicsPipeline()
     {
         ResourceFactory factory = Device.ResourceFactory; string baseDir = AppContext.BaseDirectory;
@@ -164,10 +192,12 @@ public class Renderer : IDisposable
         byte[] fragSpv = File.ReadAllBytes(Path.Combine(baseDir, "Shaders", "fragment.spv"));
         
         Shader[] shaders = new[] { factory.CreateShader(new ShaderDescription(ShaderStages.Vertex, vertSpv, "main")), factory.CreateShader(new ShaderDescription(ShaderStages.Fragment, fragSpv, "main")) };
-        _vertexBuffer = factory.CreateBuffer(new BufferDescription(8000000, BufferUsage.VertexBuffer));
+        _vertexBufferCapacity = 8000000;
+        _vertexBuffer = factory.CreateBuffer(new BufferDescription(_vertexBufferCapacity, BufferUsage.VertexBuffer));
         _viewProjBuffer = factory.CreateBuffer(new BufferDescription(64, BufferUsage.UniformBuffer));
         _lightBuffer = factory.CreateBuffer(new BufferDescription(176, BufferUsage.UniformBuffer));
-        _hudVertexBuffer = factory.CreateBuffer(new BufferDescription(2000000, BufferUsage.VertexBuffer));
+        _hudVertexBufferCapacity = 2000000;
+        _hudVertexBuffer = factory.CreateBuffer(new BufferDescription(_hudVertexBufferCapacity, BufferUsage.VertexBuffer));
 
         ResourceLayout resourceLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
             new ResourceLayoutElementDescription("ViewProjBlock", ResourceKind.UniformBuffer, ShaderStages.Vertex),
