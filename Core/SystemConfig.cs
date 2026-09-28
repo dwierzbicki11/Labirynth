@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Text.Json;
+using CyberEngine.Graphics;
 
 namespace CyberEngine.Core;
 
@@ -9,6 +10,8 @@ public static class SystemConfig
     private const int ConfigVersion = 1;
     // === PERFORMANCE ===
     public static bool VSync = false;
+    // Keep Veldrid as the production default until the Silk.NET renderer is feature-complete.
+    public static RenderingBackend RenderingBackend = RenderingBackend.Veldrid;
     public static int FpsLimit = 60;
     public static float RenderScale = 0.5f;
 
@@ -39,6 +42,7 @@ public static class SystemConfig
     private class ConfigDto
     {
         public int Version { get; set; } = ConfigVersion;
+        public int RenderingBackend { get; set; } = (int)Graphics.RenderingBackend.Veldrid;
         public bool VSync { get; set; }
         public int FpsLimit { get; set; }
         public float RenderScale { get; set; }
@@ -62,6 +66,9 @@ public static class SystemConfig
 
     private static void Apply(ConfigDto dto)
     {
+        RenderingBackend = Enum.IsDefined(typeof(Graphics.RenderingBackend), dto.RenderingBackend)
+            ? (Graphics.RenderingBackend)dto.RenderingBackend
+            : Graphics.RenderingBackend.Veldrid;
         VSync = dto.VSync;
         FpsLimit = dto.FpsLimit;
         RenderScale = dto.RenderScale;
@@ -86,6 +93,8 @@ public static class SystemConfig
 
     public static void Validate()
     {
+        if (!Enum.IsDefined(typeof(Graphics.RenderingBackend), RenderingBackend))
+            RenderingBackend = Graphics.RenderingBackend.Veldrid;
         FpsLimit = Math.Clamp(FpsLimit, 0, 1000);
         RenderScale = Math.Clamp(RenderScale, 0.1f, 2.0f);
         GraphicsQuality = Math.Clamp(GraphicsQuality, 0, 2);
@@ -107,6 +116,7 @@ public static class SystemConfig
             var dto = new ConfigDto
             {
                 Version = ConfigVersion,
+                RenderingBackend = (int)RenderingBackend,
                 VSync = VSync,
                 FpsLimit = FpsLimit,
                 RenderScale = RenderScale,
