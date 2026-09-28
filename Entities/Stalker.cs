@@ -65,12 +65,18 @@ public class Stalker : GameObject
                 _yaw += dt * 0.3f;
                 break;
             case AIState.Search:
-                Vector3 searchDir = Vector3.Normalize(_lastKnownPosition - Transform.Position);
-                _yaw = MathF.Atan2(searchDir.X, searchDir.Z);
+                Vector3 searchDelta = _lastKnownPosition - Transform.Position;
+                if (searchDelta.LengthSquared() > 0.000001f)
+                {
+                    Vector3 searchDir = Vector3.Normalize(searchDelta);
+                    _yaw = MathF.Atan2(searchDir.X, searchDir.Z);
+                }
                 break;
             case AIState.Chase:
                 // FLANKOWANIE: Lawirowanie
-                Vector3 toTarget = Vector3.Normalize(_lastKnownPosition - Transform.Position);
+                Vector3 toTargetDelta = _lastKnownPosition - Transform.Position;
+                if (toTargetDelta.LengthSquared() < 0.000001f) break;
+                Vector3 toTarget = Vector3.Normalize(toTargetDelta);
                 Vector3 perp = new Vector3(-toTarget.Z, 0, toTarget.X); 
                 _flankOffset = perp * MathF.Sin(_animationTimer * 2.0f) * 2.0f;
                 MoveTowards(_lastKnownPosition + _flankOffset, 2.5f, dt);
@@ -79,9 +85,11 @@ public class Stalker : GameObject
                 HandleCombat(dt);
                 // "Teleportacja" / Glitch przy ataku
                 if (Rng.NextDouble() < 0.05)
-                Vector3 attackDelta = Target.Transform.Position - Transform.Position;
-                if (attackDelta.LengthSquared() > 0.000001f)
-                    Transform.Position += Vector3.Normalize(attackDelta) * 0.5f;
+                {
+                    Vector3 attackDelta = Target.Transform.Position - Transform.Position;
+                    if (attackDelta.LengthSquared() > 0.000001f)
+                        Transform.Position += Vector3.Normalize(attackDelta) * 0.5f;
+                }
                 break;
         }
     }
