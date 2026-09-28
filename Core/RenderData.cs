@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Numerics;
 
@@ -21,6 +22,20 @@ public class RenderData
     public int HudVertexCount = 0;
 
     public List<Vector3> Lanterns = new List<Vector3>();
+
+    public void EnsureWorldCapacity(int requiredFloats)
+    {
+        if (requiredFloats <= WorldVertices.Length) return;
+        int newSize = Math.Max(requiredFloats, WorldVertices.Length * 2);
+        Array.Resize(ref WorldVertices, newSize);
+    }
+
+    public void EnsureHudCapacity(int requiredFloats)
+    {
+        if (requiredFloats <= HudVertices.Length) return;
+        int newSize = Math.Max(requiredFloats, HudVertices.Length * 2);
+        Array.Resize(ref HudVertices, newSize);
+    }
     
     public CameraInfo Camera;
     public bool TriggerMuzzleFlash;
