@@ -54,11 +54,17 @@ public class Renderer : IDisposable
         };
 
         // KROK 3: Bezpieczna inicjalizacja przez VeldridStartup
-        Device = !isHeadless ? VeldridStartup.CreateGraphicsDevice(window, options, backend) : GraphicsDevice.CreateVulkan(options);
-        
-        _commandList = Device.ResourceFactory.CreateCommandList();
+        // Headless mode is intentionally GPU-free. This keeps CI/fuzzing/benchmarks
+        // independent from a Vulkan driver and prevents graphics initialization from
+        // leaking into simulation-only execution.
+        if (isHeadless)
+        {
+            Device = null;
+            return;
+        }
 
-        if (isHeadless) return; 
+        Device = VeldridStartup.CreateGraphicsDevice(window, options, backend);
+        _commandList = Device.ResourceFactory.CreateCommandList();
 
         _currentRenderScale = SystemConfig.RenderScale; 
         _currentResW = SystemConfig.ResolutionWidth; 
