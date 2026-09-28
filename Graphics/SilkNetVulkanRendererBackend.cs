@@ -47,8 +47,8 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
             SType = StructureType.ApplicationInfo,
             PApplicationName = (byte*)Marshal.StringToHGlobalAnsi("CyberEngine"),
             ApplicationVersion = 1u,
-            PEngineName = (byte*)SilkMarshal.StringToPtr("CyberEngine"),
-            EngineVersion = new Version32(1, 0, 0),
+            PEngineName = (byte*)Marshal.StringToHGlobalAnsi("CyberEngine"),
+            EngineVersion = 1u,
             ApiVersion = Vk.Version12
         };
 
@@ -84,7 +84,7 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
 
                 for (uint q = 0; q < queueCount; q++)
                 {
-                    if ((queues[q].QueueFlags & QueueFlags.QueueGraphicsBit) != 0)
+                    if ((queues[q].QueueFlags & QueueFlags.GraphicsBit) != 0)
                     {
                         _physicalDevice = devices[i];
                         _graphicsQueueFamily = q;
