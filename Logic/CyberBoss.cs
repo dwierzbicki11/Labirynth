@@ -42,7 +42,7 @@ public class CyberBoss : GameObject
             MakeTacticalDecision();
         }
 
-        Vector3 dir = Vector3.Normalize(_target.Transform.Position - Transform.Position);
+        Vector3 delta = _target.Transform.Position - Transform.Position;
         float distance = Vector3.Distance(Transform.Position, _target.Transform.Position);
         
         if (distance > 3.0f) 
@@ -61,8 +61,9 @@ public class CyberBoss : GameObject
                 Speed = 2.5f; 
                 
                 // Odrzut fizyczny (Knockback) gracza/bota
-                Vector3 knockbackDir = Vector3.Normalize(_target.Transform.Position - Transform.Position);
-                _target.Transform.Position += knockbackDir * 3.0f;
+                Vector3 knockbackDelta = _target.Transform.Position - Transform.Position;
+                if (knockbackDelta.LengthSquared() > 0.000001f)
+                    _target.Transform.Position += Vector3.Normalize(knockbackDelta) * 3.0f;
             }
         }
     }
