@@ -112,10 +112,6 @@ public class World
         float mx = x + width; float mz = z + depth;
         int required = Data.WorldVertexCount + 54;
         Data.EnsureWorldCapacity(required);
-        int required = Data.WorldVertexCount + 54;
-        Data.EnsureWorldCapacity(required);
-        int required = Data.WorldVertexCount + 54;
-        Data.EnsureWorldCapacity(required);
         int i = Data.WorldVertexCount;
         var v = Data.WorldVertices;
 
