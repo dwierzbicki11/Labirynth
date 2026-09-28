@@ -27,8 +27,6 @@ public class GameScene : Scene
     private static int _currentLevel = 1;
     private int _zebranePakiety = 0;
     
-    private GodDirector _director;
-    private AgentInferenceService _agentService;
 
     // --- NOWE: Izolowany system śledzenia FPS ---
     private float _fpsTimer = 0f;
@@ -43,25 +41,7 @@ public class GameScene : Scene
     public override void OnLoad(GameEngine engine)
     {
         engine.ShowGameplayHud = true;
-        engine.ClearColor = RgbaFloat.Black;
-
-        if (engine.IsBenchmarkMode)
-        {
-            _player = new BotPlayer(() => this.GameObjects);
-        }
-        else
-        {
-            _player = new Player();
-        }
-        
-        _director = new GodDirector(() => this.GameObjects, _player);
-        
-        if (engine.IsBenchmarkMode)
-        {
-            Console.WriteLine("[CyberEngine] [SYSTEM] Aktywacja wieloagentowej struktury AI...");
-            _agentService = new AgentInferenceService();
-        }
-        
+        engine.ClearColor = RgbaFloat.Black;   
         var defaultRifle = new WeaponArchetype {
             Name = "Karabin Szturmowy 5.56",
             MaxAmmoInMagazine = 30,
@@ -74,44 +54,6 @@ public class GameScene : Scene
         
         _player.Transform.Position = new Vector3(_cellSize * 1.0f, 0f, _cellSize * 1.0f);
         GameObjects.Add(_player);
-        
-        if (engine.IsBenchmarkMode) 
-        {
-            Console.WriteLine("[CyberEngine] [AI] Zdeployowano CyberBossa (Llama-3.2-1B) na rubieży taktycznej.");
-            GameObjects.Add(new CyberBoss(10f, 10f, () => this.GameObjects, _player));
-            SpawnStalkers(10);
-        }
-    }
-
-    public override void OnUnload(GameEngine engine)
-    {
-        Console.WriteLine("[SYSTEM] Inicjowanie procedury bezpiecznego zamykania AI...");
-        
-        bool zamekUzyskany = false;
-        try 
-        {
-            zamekUzyskany = HardwareLock.AINativeLock.Wait(2000); 
-            
-            if (zamekUzyskany)
-            {
-                _director?.Dispose();
-                _agentService?.Dispose();
-            }
-            else
-            {
-                Console.WriteLine("[OSTRZEŻENIE] Wątek AI jest zajęty generowaniem odpowiedzi. Pomijam destrukcję wskaźników C++ aby zapobiec zakleszczeniu głównej pętli.");
-            }
-            
-            base.OnUnload(engine);
-        }
-        finally
-        {
-            if (zamekUzyskany)
-            {
-                HardwareLock.AINativeLock.Release();
-            }
-        }
-        Console.WriteLine("[SYSTEM] Scena poprawnie zwolniona z pamięci.");
     }
 
     public override void OnUpdate(double deltaTime, InputSnapshot snapshot, GameEngine engine)
@@ -125,8 +67,6 @@ public class GameScene : Scene
             _frameCount = 0;
             _fpsTimer -= 1.0f;
         }
-
-        _director?.Update((float)deltaTime);
 
         if (!engine.IsBenchmarkMode)
         {
@@ -448,9 +388,6 @@ public class GameScene : Scene
                                 else { camYaw = -1.57f; camOffset = new Vector3(-1.0f, 0, 0); } 
 
                                 Vector3 camPos = new Vector3(worldX, 2.2f, worldZ) + camOffset;
-                                SecurityCamera cam = new SecurityCamera(camPos, camYaw, _player, () => this.GameObjects, _director);
-                                obiektyChunku.Add(cam); 
-                                GameObjects.Add(cam);
                             }
                         }
                         else

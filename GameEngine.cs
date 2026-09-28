@@ -186,9 +186,6 @@ public class GameEngine
         for (int i = 0; i < iterations; i++)
         {
             float corruptDelta = (float)((new Random().NextDouble() * 20.0) - 10.0);
-            InputSnapshot randomSnapshot = new FuzzSnapshot(new Random());
-
-            ExecuteEnginePipeline(sw.Elapsed.TotalSeconds, corruptDelta, randomSnapshot);
             
             if (i > 0 && i % logInterval == 0)
             {
