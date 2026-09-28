@@ -40,6 +40,9 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
     private Semaphore _imageAvailable;
     private Semaphore _renderFinished;
     private Fence _inFlightFence;
+    private DescriptorSetLayout _worldDescriptorSetLayout;
+    private PipelineLayout _worldPipelineLayout;
+    private Pipeline _worldPipeline;
     private nint _nativeWindow;
     private bool _headless;
 
@@ -161,6 +164,7 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
             CreateSwapchain(width, height);
             CreateRenderTargets();
             CreateCommandResources();
+            CreateWorldPipeline();
             IsInitialized = true;
         }
         finally
@@ -198,6 +202,153 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
         uint actual = 0; Check(_swapchainApi.GetSwapchainImages(_device, _swapchain, &actual, null), "vkGetSwapchainImagesKHR(count)");
         _swapchainImages = new Image[actual]; fixed (Image* p = _swapchainImages) Check(_swapchainApi.GetSwapchainImages(_device, _swapchain, &actual, p), "vkGetSwapchainImagesKHR");
         _swapchainFormat = chosen.Format; _swapchainExtent = extent;
+    }
+
+    private void CreateWorldPipeline()
+    {
+        string shaderDir = Path.Combine(AppContext.BaseDirectory, "Shaders");
+        byte[] vertexCode = File.ReadAllBytes(Path.Combine(shaderDir, "vertex.spv"));
+        byte[] fragmentCode = File.ReadAllBytes(Path.Combine(shaderDir, "fragment.spv"));
+
+        ShaderModuleCreateInfo vertexInfo = new()
+        {
+            SType = StructureType.ShaderModuleCreateInfo,
+            CodeSize = (nuint)vertexCode.Length
+        };
+        ShaderModuleCreateInfo fragmentInfo = new()
+        {
+            SType = StructureType.ShaderModuleCreateInfo,
+            CodeSize = (nuint)fragmentCode.Length
+        };
+
+        fixed (byte* vp = vertexCode)
+        fixed (byte* fp = fragmentCode)
+        {
+            vertexInfo.PCode = (uint*)vp;
+            fragmentInfo.PCode = (uint*)fp;
+            Check(_vk!.CreateShaderModule(_device, in vertexInfo, null, out ShaderModule vertexModule), "vkCreateShaderModule(vertex)");
+            Check(_vk.CreateShaderModule(_device, in fragmentInfo, null, out ShaderModule fragmentModule), "vkCreateShaderModule(fragment)");
+
+            try
+            {
+                DescriptorSetLayoutBinding* bindings = stackalloc DescriptorSetLayoutBinding[4];
+                bindings[0] = new DescriptorSetLayoutBinding(0, DescriptorType.UniformBuffer, 1, ShaderStageFlags.VertexBit);
+                bindings[1] = new DescriptorSetLayoutBinding(1, DescriptorType.UniformBuffer, 1, ShaderStageFlags.FragmentBit);
+                bindings[2] = new DescriptorSetLayoutBinding(2, DescriptorType.CombinedImageSampler, 1, ShaderStageFlags.FragmentBit);
+                bindings[3] = new DescriptorSetLayoutBinding(3, DescriptorType.CombinedImageSampler, 1, ShaderStageFlags.FragmentBit);
+
+                DescriptorSetLayoutCreateInfo layoutInfo = new()
+                {
+                    SType = StructureType.DescriptorSetLayoutCreateInfo,
+                    BindingCount = 4,
+                    PBindings = bindings
+                };
+                Check(_vk.CreateDescriptorSetLayout(_device, in layoutInfo, null, out _worldDescriptorSetLayout), "vkCreateDescriptorSetLayout");
+
+                PipelineLayoutCreateInfo pipelineLayoutInfo = new()
+                {
+                    SType = StructureType.PipelineLayoutCreateInfo,
+                    SetLayoutCount = 1,
+                    PSetLayouts = &_worldDescriptorSetLayout
+                };
+                Check(_vk.CreatePipelineLayout(_device, in pipelineLayoutInfo, null, out _worldPipelineLayout), "vkCreatePipelineLayout");
+
+                PipelineShaderStageCreateInfo* stages = stackalloc PipelineShaderStageCreateInfo[2];
+                stages[0] = new PipelineShaderStageCreateInfo
+                {
+                    SType = StructureType.PipelineShaderStageCreateInfo,
+                    Stage = ShaderStageFlags.VertexBit,
+                    Module = vertexModule,
+                    PName = (byte*)Marshal.StringToHGlobalAnsi("main")
+                };
+                stages[1] = new PipelineShaderStageCreateInfo
+                {
+                    SType = StructureType.PipelineShaderStageCreateInfo,
+                    Stage = ShaderStageFlags.FragmentBit,
+                    Module = fragmentModule,
+                    PName = (byte*)Marshal.StringToHGlobalAnsi("main")
+                };
+
+                VertexInputBindingDescription binding = new(0, 36, VertexInputRate.Vertex);
+                VertexInputAttributeDescription* attributes = stackalloc VertexInputAttributeDescription[4];
+                attributes[0] = new VertexInputAttributeDescription(0, 0, Format.R32G32B32Sfloat, 0);
+                attributes[1] = new VertexInputAttributeDescription(1, 0, Format.R32G32B32Sfloat, 12);
+                attributes[2] = new VertexInputAttributeDescription(2, 0, Format.R32G32Sfloat, 24);
+                attributes[3] = new VertexInputAttributeDescription(3, 0, Format.R32Sfloat, 32);
+
+                PipelineVertexInputStateCreateInfo vertexInput = new()
+                {
+                    SType = StructureType.PipelineVertexInputStateCreateInfo,
+                    VertexBindingDescriptionCount = 1,
+                    PVertexBindingDescriptions = &binding,
+                    VertexAttributeDescriptionCount = 4,
+                    PVertexAttributeDescriptions = attributes
+                };
+                PipelineInputAssemblyStateCreateInfo assembly = new()
+                {
+                    SType = StructureType.PipelineInputAssemblyStateCreateInfo,
+                    Topology = PrimitiveTopology.TriangleList
+                };
+                Viewport viewport = new(0, 0, _swapchainExtent.Width, _swapchainExtent.Height, 0, 1);
+                Rect2D scissor = new(new Offset2D(0, 0), _swapchainExtent);
+                PipelineViewportStateCreateInfo viewportState = new()
+                {
+                    SType = StructureType.PipelineViewportStateCreateInfo,
+                    ViewportCount = 1,
+                    PViewports = &viewport,
+                    ScissorCount = 1,
+                    PScissors = &scissor
+                };
+                PipelineRasterizationStateCreateInfo raster = new()
+                {
+                    SType = StructureType.PipelineRasterizationStateCreateInfo,
+                    PolygonMode = PolygonMode.Fill,
+                    CullMode = CullModeFlags.None,
+                    FrontFace = FrontFace.CounterClockwise,
+                    LineWidth = 1f
+                };
+                PipelineMultisampleStateCreateInfo multisample = new()
+                {
+                    SType = StructureType.PipelineMultisampleStateCreateInfo,
+                    RasterizationSamples = SampleCountFlags.Count1Bit
+                };
+                PipelineColorBlendAttachmentState blendAttachment = new()
+                {
+                    BlendEnable = false,
+                    ColorWriteMask = ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit
+                };
+                PipelineColorBlendStateCreateInfo blend = new()
+                {
+                    SType = StructureType.PipelineColorBlendStateCreateInfo,
+                    AttachmentCount = 1,
+                    PAttachments = &blendAttachment
+                };
+                GraphicsPipelineCreateInfo pipelineInfo = new()
+                {
+                    SType = StructureType.GraphicsPipelineCreateInfo,
+                    StageCount = 2,
+                    PStages = stages,
+                    PVertexInputState = &vertexInput,
+                    PInputAssemblyState = &assembly,
+                    PViewportState = &viewportState,
+                    PRasterizationState = &raster,
+                    PMultisampleState = &multisample,
+                    PColorBlendState = &blend,
+                    Layout = _worldPipelineLayout,
+                    RenderPass = _renderPass,
+                    Subpass = 0
+                };
+
+                Check(_vk.CreateGraphicsPipelines(_device, default, 1, in pipelineInfo, null, out _worldPipeline), "vkCreateGraphicsPipelines");
+                Marshal.FreeHGlobal((nint)stages[0].PName);
+                Marshal.FreeHGlobal((nint)stages[1].PName);
+            }
+            finally
+            {
+                _vk.DestroyShaderModule(_device, vertexModule, null);
+                _vk.DestroyShaderModule(_device, fragmentModule, null);
+            }
+        }
     }
 
     private void CreateRenderTargets()
@@ -387,6 +538,9 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
             if (_inFlightFence.Handle != 0) _vk.DestroyFence(_device, _inFlightFence, null);
             if (_renderFinished.Handle != 0) _vk.DestroySemaphore(_device, _renderFinished, null);
             if (_imageAvailable.Handle != 0) _vk.DestroySemaphore(_device, _imageAvailable, null);
+            if (_worldPipeline.Handle != 0) _vk.DestroyPipeline(_device, _worldPipeline, null);
+            if (_worldPipelineLayout.Handle != 0) _vk.DestroyPipelineLayout(_device, _worldPipelineLayout, null);
+            if (_worldDescriptorSetLayout.Handle != 0) _vk.DestroyDescriptorSetLayout(_device, _worldDescriptorSetLayout, null);
             if (_commandPool.Handle != 0) _vk.DestroyCommandPool(_device, _commandPool, null);
             foreach (var framebuffer in _framebuffers) if (framebuffer.Handle != 0) _vk.DestroyFramebuffer(_device, framebuffer, null);
             if (_renderPass.Handle != 0) _vk.DestroyRenderPass(_device, _renderPass, null);
@@ -426,6 +580,9 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
         _imageAvailable = default;
         _renderFinished = default;
         _inFlightFence = default;
+        _worldPipeline = default;
+        _worldPipelineLayout = default;
+        _worldDescriptorSetLayout = default;
         _sdl = null;
         _surfaceApi = null;
         _swapchainApi = null;
