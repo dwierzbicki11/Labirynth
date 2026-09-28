@@ -27,8 +27,8 @@ public static class SystemConfig
     public static bool HardwareUpscale = false;
 
     // === INNE ===
-    public static int ResolutionWidth = 1280;
-    public static int ResolutionHeight = 720;
+    public static int ResolutionWidth = 1920;
+    public static int ResolutionHeight = 1080;
     public static float Fov = 75f;
     public static int MasterVolume = 100;
     public static int SfxVolume = 100;
