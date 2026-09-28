@@ -77,7 +77,7 @@ public class Stalker : GameObject
             case AIState.Attack:
                 HandleCombat(deltaTime);
                 // "Teleportacja" / Glitch przy ataku
-                if (new Random().NextDouble() < 0.05)
+                if (Rng.NextDouble() < 0.05)
                     Transform.Position += Vector3.Normalize(Target.Transform.Position - Transform.Position) * 0.5f;
                 break;
         }
@@ -127,8 +127,8 @@ public class Stalker : GameObject
     {
         // 1. Drżenie (Jitter)
         float jitterIntensity = (CurrentState == AIState.Attack) ? 0.08f : 0.02f;
-        float jitterX = (float)(new Random().NextDouble() - 0.5) * jitterIntensity;
-        float jitterZ = (float)(new Random().NextDouble() - 0.5) * jitterIntensity;
+        float jitterX = (float)(Rng.NextDouble() - 0.5) * jitterIntensity;
+        float jitterZ = (float)(Rng.NextDouble() - 0.5) * jitterIntensity;
         
         float hover = MathF.Sin(_animationTimer * 3.0f) * 0.1f;
         Vector3 basePos = Transform.Position + new Vector3(jitterX, 0.5f + hover, jitterZ);
