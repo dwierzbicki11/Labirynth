@@ -110,6 +110,12 @@ public class World
     public void DrawHorizontalPlane(float x, float y, float z, float width, float depth, float matId, float nx, float ny, float nz)
     {
         float mx = x + width; float mz = z + depth;
+        int required = Data.WorldVertexCount + 54;
+        Data.EnsureWorldCapacity(required);
+        int required = Data.WorldVertexCount + 54;
+        Data.EnsureWorldCapacity(required);
+        int required = Data.WorldVertexCount + 54;
+        Data.EnsureWorldCapacity(required);
         int i = Data.WorldVertexCount;
         var v = Data.WorldVertices;
 
@@ -168,9 +174,10 @@ public class World
     {
         if (meshData == null || meshData.Length == 0) return;
         
+        int vertexCount = meshData.Length / 9;
+        Data.EnsureWorldCapacity(Data.WorldVertexCount + meshData.Length);
         int i = Data.WorldVertexCount;
         var v = Data.WorldVertices;
-        int vertexCount = meshData.Length / 9;
         
         Matrix4x4.Invert(transform, out Matrix4x4 normalMatrix);
         normalMatrix = Matrix4x4.Transpose(normalMatrix);
@@ -241,6 +248,7 @@ public class World
     public void DrawCube(float x, float y, float z, float width, float height, float depth)
     {
         float mx = x + width; float my = y + height; float mz = z + depth;
+        Data.EnsureWorldCapacity(Data.WorldVertexCount + 324);
         int i = Data.WorldVertexCount;
         var v = Data.WorldVertices;
 
@@ -297,6 +305,7 @@ public class World
         float top = 1f - (screenY / resH) * 2f;
         float bottom = top - (height / resH) * 2f;
         
+        Data.EnsureHudCapacity(Data.HudVertexCount + 36);
         int i = Data.HudVertexCount;
         var v = Data.HudVertices;
 
