@@ -5,9 +5,17 @@ on:
     branches: ["**"]
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -16,9 +24,24 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "11.0.x"
+          cache: true
+          cache-dependency-path: CyberEngine.csproj
+
+      - name: Show SDK
+        run: dotnet --info
 
       - name: Restore
         run: dotnet restore CyberEngine.csproj
 
       - name: Build
         run: dotnet build CyberEngine.csproj --configuration Release --no-restore
+
+      - name: Publish
+        run: dotnet publish CyberEngine.csproj --configuration Release --no-restore --no-build --output ./artifacts/publish
+
+      - name: Upload publish artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CyberEngine-linux-x64
+          path: artifacts/publish
+          if-no-files-found: error
