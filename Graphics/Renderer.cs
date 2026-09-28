@@ -17,7 +17,7 @@ public class Renderer : IDisposable
     private Pipeline _pipeline, _postPipeline, _hudPipeline;
     private DeviceBuffer _vertexBuffer, _viewProjBuffer, _lightBuffer, _hudVertexBuffer, _settingsBuffer;
     private ResourceSet _resourceSet, _postResourceSet;
-    private ResourceLayout _postResourceLayout;
+    private ResourceLayout _resourceLayout, _postResourceLayout;
     private Framebuffer _offscreenFB;
     private Texture _offscreenColor, _offscreenDepth, _wallTexture;
     private TextureView _offscreenColorView, _offscreenDepthView, _wallTextureView;
@@ -199,22 +199,23 @@ public class Renderer : IDisposable
         _hudVertexBufferCapacity = 2000000;
         _hudVertexBuffer = factory.CreateBuffer(new BufferDescription(_hudVertexBufferCapacity, BufferUsage.VertexBuffer));
 
-        ResourceLayout resourceLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
+        _resourceLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
             new ResourceLayoutElementDescription("ViewProjBlock", ResourceKind.UniformBuffer, ShaderStages.Vertex),
             new ResourceLayoutElementDescription("LightBlock", ResourceKind.UniformBuffer, ShaderStages.Fragment),
             new ResourceLayoutElementDescription("u_Texture", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
             new ResourceLayoutElementDescription("u_Sampler", ResourceKind.Sampler, ShaderStages.Fragment)
         ));
 
-        _resourceSet = factory.CreateResourceSet(new ResourceSetDescription(resourceLayout, _viewProjBuffer, _lightBuffer, _wallTextureView, _sampler));
+        _resourceSet = factory.CreateResourceSet(new ResourceSetDescription(_resourceLayout, _viewProjBuffer, _lightBuffer, _wallTextureView, _sampler));
 
         GraphicsPipelineDescription pd = new GraphicsPipelineDescription {
             BlendState = BlendStateDescription.SingleOverrideBlend, DepthStencilState = new DepthStencilStateDescription(true, true, ComparisonKind.LessEqual),
-            RasterizerState = RasterizerStateDescription.CullNone, PrimitiveTopology = PrimitiveTopology.TriangleList, ResourceLayouts = new[] { resourceLayout },
+            RasterizerState = RasterizerStateDescription.CullNone, PrimitiveTopology = PrimitiveTopology.TriangleList, ResourceLayouts = new[] { _resourceLayout },
             ShaderSet = new ShaderSetDescription(new[] { new VertexLayoutDescription(new VertexElementDescription("InsidePos", VertexElementSemantic.Position, VertexElementFormat.Float3, 0), new VertexElementDescription("InNormal", VertexElementSemantic.Normal, VertexElementFormat.Float3, 12), new VertexElementDescription("InUV", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float2, 24), new VertexElementDescription("InMatId", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float1, 32)) }, shaders),
             Outputs = new OutputDescription(new OutputAttachmentDescription(PixelFormat.D24_UNorm_S8_UInt), new OutputAttachmentDescription(PixelFormat.R8_G8_B8_A8_UNorm))
         };
         _pipeline = factory.CreateGraphicsPipeline(ref pd);
+        foreach (var shader in shaders) shader.Dispose();
 
         byte[] postVertSpv = File.ReadAllBytes(Path.Combine(baseDir, "Shaders", "post_vertex.spv"));
         byte[] postFragSpv = File.ReadAllBytes(Path.Combine(baseDir, "Shaders", "post_fragment.spv"));
@@ -235,6 +236,7 @@ public class Renderer : IDisposable
             ShaderSet = new ShaderSetDescription(Array.Empty<VertexLayoutDescription>(), postShaders), Outputs = Device.MainSwapchain.Framebuffer.OutputDescription
         };
         _postPipeline = factory.CreateGraphicsPipeline(ref postPd);
+        foreach (var shader in postShaders) shader.Dispose();
 
         GraphicsPipelineDescription hpd = new GraphicsPipelineDescription {
             BlendState = BlendStateDescription.SingleAlphaBlend, DepthStencilState = DepthStencilStateDescription.Disabled, RasterizerState = RasterizerStateDescription.CullNone,
@@ -243,6 +245,7 @@ public class Renderer : IDisposable
             Outputs = Device.MainSwapchain.Framebuffer.OutputDescription
         };
         _hudPipeline = factory.CreateGraphicsPipeline(ref hpd);
+        foreach (var shader in hudShaders) shader.Dispose();
     }
 
     // ZMODYFIKOWANA PROCEDURA: Generator 4-częściowego Atlasu Tekstur
@@ -288,7 +291,7 @@ public class Renderer : IDisposable
         _vertexBuffer?.Dispose(); _viewProjBuffer?.Dispose(); _lightBuffer?.Dispose(); _hudVertexBuffer?.Dispose(); _settingsBuffer?.Dispose();
         _offscreenFB?.Dispose(); _offscreenColorView?.Dispose(); _offscreenDepthView?.Dispose();
         _offscreenColor?.Dispose(); _offscreenDepth?.Dispose(); _postResourceSet?.Dispose();
-        _resourceSet?.Dispose(); _postResourceLayout?.Dispose(); _wallTextureView?.Dispose(); _wallTexture?.Dispose(); _sampler?.Dispose();
+        _resourceSet?.Dispose(); _resourceLayout?.Dispose(); _postResourceLayout?.Dispose(); _wallTextureView?.Dispose(); _wallTexture?.Dispose(); _sampler?.Dispose();
         _commandList?.Dispose(); Device?.Dispose();
     }
 }
