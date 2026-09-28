@@ -1371,7 +1371,7 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
         void* destination;
         Check(_vk!.MapMemory(_device, memory, 0, (nuint)data.Length, 0, &destination), "vkMapMemory");
         fixed (byte* source = data)
-            Buffer.MemoryCopy(source, destination, data.Length, data.Length);
+            System.Buffer.MemoryCopy(source, destination, data.Length, data.Length);
         _vk.UnmapMemory(_device, memory);
     }
 
@@ -1512,7 +1512,13 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
         ulong vertexOffset = 0;
         _vk.CmdBindVertexBuffers(cmd, 0, 1, in _worldVertexBuffer, in vertexOffset);
         if (data.WorldVertexCount > 0)
-            _vk.CmdDraw(cmd, (uint)(data.WorldVertexCount / 9), 1, 0, 0);
+            uint worldVertexCount = (uint)(data.WorldVertexCount / 9);
+        if (worldVertexCount > 0)
+        {
+            _vk.CmdDraw(cmd, worldVertexCount, 1, 0, 0);
+            data.GpuDrawCalls++;
+            data.GpuVertices += (int)worldVertexCount;
+        }
         _vk.CmdEndRenderPass(cmd);
 
         Viewport postViewport = new(0, 0, _swapchainExtent.Width, _swapchainExtent.Height, 0, 1);
@@ -1545,7 +1551,10 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
         {
             _vk.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, _hudPipeline);
             _vk.CmdBindVertexBuffers(cmd, 0, 1, in _hudVertexBuffer, in vertexOffset);
-            _vk.CmdDraw(cmd, (uint)(data.HudVertexCount / 6), 1, 0, 0);
+            uint hudVertexCount = (uint)(data.HudVertexCount / 6);
+            _vk.CmdDraw(cmd, hudVertexCount, 1, 0, 0);
+            data.GpuDrawCalls++;
+            data.GpuVertices += (int)hudVertexCount;
         }
 
         _vk.CmdEndRenderPass(cmd);
@@ -1629,6 +1638,16 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
 
         _vk!.DeviceWaitIdle(_device);
 
+        // Pipelines and framebuffers are tied to render-pass compatibility, so tear them
+        // down before replacing the swapchain and render passes.
+        DestroyPipelines();
+        DestroySceneTargets();
+
+        if (_sceneRenderPass.Handle != 0)
+            _vk.DestroyRenderPass(_device, _sceneRenderPass, null);
+        if (_postRenderPass.Handle != 0)
+            _vk.DestroyRenderPass(_device, _postRenderPass, null);
+
         foreach (Framebuffer framebuffer in _swapchainFramebuffers)
             if (framebuffer.Handle != 0) _vk.DestroyFramebuffer(_device, framebuffer, null);
         foreach (ImageView view in _swapchainImageViews)
@@ -1641,23 +1660,11 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
         _swapchainImages = Array.Empty<Image>();
 
         CreateSwapchain(width, height);
-        CreateFramebuffers();
-
-        DestroySceneTargets();
-        if (_sceneRenderPass.Handle != 0)
-            _vk.DestroyRenderPass(_device, _sceneRenderPass, null);
-        if (_postRenderPass.Handle != 0)
-            _vk.DestroyRenderPass(_device, _postRenderPass, null);
-
         CreateRenderPasses();
         CreateSceneTargets();
-
-        // Pipeline/render-pass compatibility is tied to the scene/post render-pass handles.
-        DestroyPipelines();
+        CreateFramebuffers();
         CreatePipelines();
 
-        // Descriptor sets remain valid except the post sampled-image view changed with
-        // the recreated scene target, so rewrite that descriptor.
         WriteImageDescriptor(_postDescriptorSets[0], DescriptorType.SampledImage, _sceneColorView);
     }
 
