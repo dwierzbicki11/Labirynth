@@ -21,7 +21,7 @@ public sealed class VeldridRendererBackend : IRendererBackend
     public bool IsInitialized { get; private set; }
     public GraphicsDevice? Device => _renderer.Device;
 
-    public void Initialize(int width, int height, bool headless)
+    public void Initialize(int width, int height, bool headless, nint nativeWindowHandle)
     {
         _headless = headless;
         // The engine continues to own the SDL/Veldrid window for now.
