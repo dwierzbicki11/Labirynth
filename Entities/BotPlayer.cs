@@ -41,7 +41,7 @@ public class BotPlayer : Player
 
     public override void Update(double deltaTime)
     {
-        float dt = (float)deltaTime;
+        float dt = Math.Clamp((float)deltaTime, 0.0001f, 0.1f);
         var objs = _objectsProvider();
 
         // 1. ZEGARY SYSTEMOWE
@@ -113,7 +113,7 @@ public class BotPlayer : Player
         _integralError += error * dt;
         _integralError = Math.Clamp(_integralError, -1.5f, 1.5f);
         
-        float derivative = (error - _previousError) / dt;
+        float derivative = (error - _previousError) / MathF.Max(dt, 0.0001f);
         _previousError = error;
 
         float angularVelocity = (Kp * error) + (Ki * _integralError) + (Kd * derivative);
