@@ -31,7 +31,7 @@ public class CyberBoss : GameObject
 
     public override void Update(double deltaTime)
     {
-        float dt = (float)deltaTime;
+        float dt = Math.Clamp((float)deltaTime, 0.0001f, 0.1f);
         
         if (Health <= 0) return;
 
@@ -43,8 +43,10 @@ public class CyberBoss : GameObject
         }
 
         Vector3 delta = _target.Transform.Position - Transform.Position;
-        float distance = Vector3.Distance(Transform.Position, _target.Transform.Position);
-        
+        float distance = delta.Length();
+        if (distance < 0.0001f) return;
+        Vector3 dir = delta / distance;
+
         if (distance > 3.0f) 
         {
             Transform.Position += dir * Speed * dt;
