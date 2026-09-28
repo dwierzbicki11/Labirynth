@@ -424,16 +424,36 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
         sceneAttachments[0] = color;
         sceneAttachments[1] = depth;
 
+        SubpassDescription* sceneSubpasses = stackalloc SubpassDescription[1];
+        sceneSubpasses[0] = sceneSubpass;
+        SubpassDependency sceneDependency = new()
+        {
+            SrcSubpass = uint.MaxValue,
+            DstSubpass = 0,
+            SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit,
+            DstStageMask = PipelineStageFlags.FragmentShaderBit,
+            SrcAccessMask = AccessFlags.ColorAttachmentWriteBit,
+            DstAccessMask = AccessFlags.ShaderReadBit
+        };
+
         RenderPassCreateInfo sceneInfo = new()
         {
             SType = StructureType.RenderPassCreateInfo,
             AttachmentCount = 2,
             PAttachments = sceneAttachments,
-            SubpassCount = 1
+            SubpassCount = 1,
+            PSubpasses = sceneSubpasses,
+            DependencyCount = 1,
+            PDependencies = &sceneDependency
         };
-        SubpassDescription* sceneSubpasses = stackalloc SubpassDescription[1];
-        sceneSubpasses[0] = sceneSubpass;
-        sceneInfo.PSubpasses = sceneSubpasses;
+
+        // The external dependency makes the final color transition visible to the post pass.
+        sceneDependency.SrcSubpass = 0;
+        sceneDependency.DstSubpass = uint.MaxValue;
+        sceneDependency.SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit;
+        sceneDependency.DstStageMask = PipelineStageFlags.FragmentShaderBit;
+        sceneDependency.SrcAccessMask = AccessFlags.ColorAttachmentWriteBit;
+        sceneDependency.DstAccessMask = AccessFlags.ShaderReadBit;
 
         Check(_vk!.CreateRenderPass(_device, in sceneInfo, null, out _sceneRenderPass), "vkCreateRenderPass(scene)");
 
@@ -484,11 +504,6 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
 
         CreateImage(_sceneWidth, _sceneHeight, Format.D32Sfloat, ImageUsageFlags.DepthStencilAttachmentBit, MemoryPropertyFlags.DeviceLocalBit, out _sceneDepth, out _sceneDepthMemory);
         _sceneDepthView = CreateImageView(_sceneDepth, Format.D32Sfloat, ImageAspectFlags.DepthBit);
-
-        CommandBuffer cmd = BeginImmediateCommands();
-        TransitionImageLayout(cmd, _sceneColor, ImageLayout.Undefined, ImageLayout.ColorAttachmentOptimal, ImageAspectFlags.ColorBit);
-        TransitionImageLayout(cmd, _sceneDepth, ImageLayout.Undefined, ImageLayout.DepthStencilAttachmentOptimal, ImageAspectFlags.DepthBit);
-        EndImmediateCommands(cmd);
 
         FramebufferCreateInfo info = new()
         {
