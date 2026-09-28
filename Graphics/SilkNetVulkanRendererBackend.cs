@@ -50,16 +50,16 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
     private uint _sceneWidth;
     private uint _sceneHeight;
 
-    private Buffer _worldVertexBuffer;
+    private Silk.NET.Vulkan.Buffer _worldVertexBuffer;
     private DeviceMemory _worldVertexMemory;
     private ulong _worldVertexCapacity;
-    private Buffer _hudVertexBuffer;
+    private Silk.NET.Vulkan.Buffer _hudVertexBuffer;
     private DeviceMemory _hudVertexMemory;
     private ulong _hudVertexCapacity;
 
-    private Buffer _viewProjBuffer;
+    private Silk.NET.Vulkan.Buffer _viewProjBuffer;
     private DeviceMemory _viewProjMemory;
-    private Buffer _lightBuffer;
+    private Silk.NET.Vulkan.Buffer _lightBuffer;
     private DeviceMemory _lightMemory;
 
     private Image _wallTexture;
@@ -654,7 +654,7 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
         }
     }
 
-    private void WriteBufferDescriptor(DescriptorSet set, DescriptorType type, Buffer buffer, ulong range)
+    private void WriteBufferDescriptor(DescriptorSet set, DescriptorType type, Silk.NET.Vulkan.Buffer buffer, ulong range)
     {
         DescriptorBufferInfo bufferInfo = new(buffer, 0, range);
         WriteDescriptorSet write = new()
@@ -1175,7 +1175,7 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
         CreateImage(width, height, Format.R8G8B8A8Unorm, ImageUsageFlags.TransferDstBit | ImageUsageFlags.SampledBit, MemoryPropertyFlags.DeviceLocalBit, out _wallTexture, out _wallTextureMemory);
 
         ulong size = (ulong)pixels.Length;
-        CreateHostBuffer(size, BufferUsageFlags.TransferSrcBit, out Buffer stagingBuffer, out DeviceMemory stagingMemory);
+        CreateHostBuffer(size, BufferUsageFlags.TransferSrcBit, out Silk.NET.Vulkan.Buffer stagingBuffer, out DeviceMemory stagingMemory);
         try
         {
             UploadMapped(stagingMemory, pixels);
@@ -1200,7 +1200,7 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
         _wallSampler = CreateSampler();
     }
 
-    private void CreateHostBuffer(ulong size, BufferUsageFlags usage, out Buffer buffer, out DeviceMemory memory)
+    private void CreateHostBuffer(ulong size, BufferUsageFlags usage, out Silk.NET.Vulkan.Buffer buffer, out DeviceMemory memory)
     {
         BufferCreateInfo info = new()
         {
