@@ -185,11 +185,14 @@ public class GameEngine
         Console.WriteLine($"--- [FUZZING ZAINICJOWANY: {iterations} CYKLI CPU (TRYB EKSTREMALNY - BEZ GRAFIKI)] ---");
         Stopwatch sw = Stopwatch.StartNew(); 
         
+        iterations = Math.Clamp(iterations, 1, 10_000_000);
         int logInterval = Math.Max(1, iterations / 10);
 
         for (int i = 0; i < iterations; i++)
         {
             float corruptDelta = (float)((Random.Shared.NextDouble() * 20.0) - 10.0);
+            // Fuzzed input intentionally exercises invalid timing, while the engine
+            // remains responsible for clamping simulation time at its public boundary.
             InputSnapshot randomSnapshot = new FuzzSnapshot(Random.Shared);
 
             ExecuteEnginePipeline(sw.Elapsed.TotalSeconds, corruptDelta, randomSnapshot);
