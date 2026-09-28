@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Numerics;
 using System.Threading.Tasks;
@@ -17,6 +18,7 @@ public class CyberBoss : GameObject
     
     private float _decisionCooldown = 0f;
     private bool _isThinking = false;
+    private readonly ConcurrentQueue<string> _pendingDecisions = new();
     
     // Krótki i techniczny prompt bez "You are..."
     private const string BOSS_PROMPT = "Choose action: 1=Charge, 2=Shield, 3=Artillery. Reply with a single digit.";
@@ -34,6 +36,18 @@ public class CyberBoss : GameObject
         float dt = Math.Clamp((float)deltaTime, 0.0001f, 0.1f);
         
         if (Health <= 0) return;
+
+        while (_pendingDecisions.TryDequeue(out string pending))
+        {
+            if (pending == "__DONE__")
+            {
+                _isThinking = false;
+            }
+            else
+            {
+                ExecuteDecision(pending);
+            }
+        }
 
         _decisionCooldown -= dt;
         if (_decisionCooldown <= 0f && !_isThinking)
@@ -91,11 +105,12 @@ public class CyberBoss : GameObject
                     return; 
                 }
 
-                ExecuteDecision(decision);
+                _pendingDecisions.Enqueue(decision);
             }
             finally
             {
-                _isThinking = false;
+                // Game state is only mutated by Update() on the engine thread.
+                _pendingDecisions.Enqueue("__DONE__");
             }
         });
     }
