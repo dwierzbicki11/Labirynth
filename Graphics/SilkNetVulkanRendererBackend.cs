@@ -215,9 +215,7 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
 
         if (_device.Handle != 0)
         {
-        {
             _vk.DeviceWaitIdle(_device);
-            _vk.DestroyDevice(_device, null);
             if (_swapchain.Handle != 0 && _swapchainApi is not null) _swapchainApi.DestroySwapchain(_device, _swapchain, null);
             _swapchain = default;
             _vk.DestroyDevice(_device, null);
