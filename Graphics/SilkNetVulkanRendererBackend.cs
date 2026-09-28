@@ -1,7 +1,7 @@
 using System;
 using System.Numerics;
 using Silk.NET.Vulkan;
-using Silk.NET.Core;
+using System.Runtime.InteropServices;
 using CyberEngine.Core;
 
 namespace CyberEngine.Graphics;
@@ -45,8 +45,8 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
         ApplicationInfo appInfo = new()
         {
             SType = StructureType.ApplicationInfo,
-            PApplicationName = (byte*)SilkMarshal.StringToPtr("CyberEngine"),
-            ApplicationVersion = new Version32(1, 0, 0),
+            PApplicationName = (byte*)Marshal.StringToHGlobalAnsi("CyberEngine"),
+            ApplicationVersion = 1u,
             PEngineName = (byte*)SilkMarshal.StringToPtr("CyberEngine"),
             EngineVersion = new Version32(1, 0, 0),
             ApiVersion = Vk.Version12
@@ -119,8 +119,8 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
         }
         finally
         {
-            SilkMarshal.Free((nint)appInfo.PApplicationName);
-            SilkMarshal.Free((nint)appInfo.PEngineName);
+            Marshal.FreeHGlobal((nint)appInfo.PApplicationName);
+            Marshal.FreeHGlobal((nint)appInfo.PEngineName);
 
             if (!IsInitialized)
                 DisposeVulkanObjects();
