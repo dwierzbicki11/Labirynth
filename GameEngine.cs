@@ -21,7 +21,7 @@ public class GameEngine
 {
     private Sdl2Window _window;
     private readonly World _world = new World();
-    private readonly Renderer _renderer = new Renderer();
+    private readonly VeldridRendererBackend _renderer = new VeldridRendererBackend();
     private readonly System.Net.Sockets.UdpClient _telemetryClient = new System.Net.Sockets.UdpClient();
     
     private readonly byte[] _udpBuffer = new byte[256];
@@ -77,7 +77,7 @@ public class GameEngine
                 _window = VeldridStartup.CreateWindow(ref windowCI);
             }
 
-            _renderer.Initialize(_window, width, height, backend);
+            _renderer.AttachWindow(_window, width, height, backend);
             Console.WriteLine($"[INIT] Silnik gotowy. Architektura Modularna (CPU/GPU) Aktywna.");
         }
         catch (Exception ex)
@@ -168,7 +168,7 @@ public class GameEngine
         while (sw.Elapsed.TotalSeconds < seconds) {
             InputSnapshot snapshot = isHeadless ? null : _window.PumpEvents();
             ExecuteEnginePipeline(sw.Elapsed.TotalSeconds, fixedDelta, snapshot);
-            _renderer.DrawFrame(_world.Data, _window, Width, Height, ClearColor, isHeadless);
+            _renderer.Render(_world.Data, Width, Height, new Vector4(ClearColor.R, ClearColor.G, ClearColor.B, ClearColor.A));
         }
         
         sw.Stop();
