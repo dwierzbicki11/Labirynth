@@ -188,9 +188,9 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
             CreateDevice();
             CreateSwapchain(width, height);
             CreateRenderPasses();
+            CreateCommandResources();
             CreateSceneTargets();
             CreateFramebuffers();
-            CreateCommandResources();
             CreateUniformBuffers();
             CreateStaticResources();
             CreateDescriptorResources();
@@ -378,6 +378,8 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
 
         _swapchainFormat = chosenFormat.Format;
         _swapchainExtent = extent;
+        _lastSwapchainRequestWidth = width;
+        _lastSwapchainRequestHeight = height;
     }
 
     private void CreateRenderPasses()
@@ -613,7 +615,7 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
         WriteBufferDescriptor(_worldDescriptorSets[0], DescriptorType.UniformBuffer, _viewProjBuffer, 64);
         WriteBufferDescriptor(_worldDescriptorSets[1], DescriptorType.UniformBuffer, _lightBuffer, (ulong)Marshal.SizeOf<LightData>());
         WriteImageDescriptor(_worldDescriptorSets[2], DescriptorType.SampledImage, _wallTextureView);
-        WriteImageDescriptor(_worldDescriptorSets[3], DescriptorType.Sampler, default);
+        WriteSamplerDescriptor(_worldDescriptorSets[3], _wallSampler);
 
         _postSetLayouts = new DescriptorSetLayout[2];
         _postDescriptorSets = new DescriptorSet[2];
@@ -621,7 +623,7 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
         CreateDescriptorSetLayout(DescriptorType.Sampler, ShaderStageFlags.FragmentBit, out _postSetLayouts[1]);
         AllocateDescriptorSets(_postSetLayouts, _postDescriptorSets);
         WriteImageDescriptor(_postDescriptorSets[0], DescriptorType.SampledImage, _sceneColorView);
-        WriteImageDescriptor(_postDescriptorSets[1], DescriptorType.Sampler, default);
+        WriteSamplerDescriptor(_postDescriptorSets[1], _postSampler);
     }
 
     private void CreateDescriptorSetLayout(DescriptorType type, ShaderStageFlags stage, out DescriptorSetLayout layout)
@@ -681,6 +683,21 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
             DstBinding = 0,
             DescriptorCount = 1,
             DescriptorType = type,
+            PImageInfo = &imageInfo
+        };
+        _vk!.UpdateDescriptorSets(_device, 1, in write, 0, null);
+    }
+
+    private void WriteSamplerDescriptor(DescriptorSet set, Sampler sampler)
+    {
+        DescriptorImageInfo imageInfo = new() { Sampler = sampler };
+        WriteDescriptorSet write = new()
+        {
+            SType = StructureType.WriteDescriptorSet,
+            DstSet = set,
+            DstBinding = 0,
+            DescriptorCount = 1,
+            DescriptorType = DescriptorType.Sampler,
             PImageInfo = &imageInfo
         };
         _vk!.UpdateDescriptorSets(_device, 1, in write, 0, null);
@@ -1307,8 +1324,8 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
             SType = StructureType.ImageMemoryBarrier,
             OldLayout = oldLayout,
             NewLayout = newLayout,
-            SrcQueueFamilyIndex = Vulkan.QueueFamilyIgnored,
-            DstQueueFamilyIndex = Vulkan.QueueFamilyIgnored,
+            SrcQueueFamilyIndex = uint.MaxValue,
+            DstQueueFamilyIndex = uint.MaxValue,
             Image = image,
             SubresourceRange = new ImageSubresourceRange(aspect, 0, 1, 0, 1)
         };
@@ -1367,7 +1384,7 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
             void* destination;
             Check(_vk!.MapMemory(_device, _worldVertexMemory, 0, worldBytes, 0, &destination), "vkMapMemory(world)");
             fixed (float* source = data.WorldVertices)
-                Buffer.MemoryCopy(source, destination, (long)worldBytes, (long)worldBytes);
+                System.Buffer.MemoryCopy(source, destination, (long)worldBytes, (long)worldBytes);
             _vk.UnmapMemory(_device, _worldVertexMemory);
         }
 
@@ -1378,7 +1395,7 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
             void* destination;
             Check(_vk.MapMemory(_device, _hudVertexMemory, 0, hudBytes, 0, &destination), "vkMapMemory(hud)");
             fixed (float* source = data.HudVertices)
-                Buffer.MemoryCopy(source, destination, (long)hudBytes, (long)hudBytes);
+                System.Buffer.MemoryCopy(source, destination, (long)hudBytes, (long)hudBytes);
             _vk.UnmapMemory(_device, _hudVertexMemory);
         }
     }
@@ -1423,13 +1440,7 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
         Matrix4x4 view = Matrix4x4.CreateLookAt(eyePos, eyePos + data.Camera.Forward, Vector3.UnitY);
         float aspect = height > 0.001f ? width / height : 1f;
         Matrix4x4 proj = Matrix4x4.CreatePerspectiveFieldOfView(SystemConfig.Fov * MathF.PI / 180f, aspect, 0.05f, 100f);
-
-        if (!Matrix4x4.Invert(view * proj, out _))
-        {
-            // Keep the original matrix when inversion reports a degenerate camera;
-            // the shader never consumes the inverse, so this branch is intentionally
-            // just a validation point for bad projection inputs.
-        }
+        proj.M22 *= -1f;
 
         unsafe
         {
@@ -1458,9 +1469,6 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
         if (lights.LanternCount > 7) lights.Lantern7 = new Vector4(data.Lanterns[7], 1f);
 
         void* dst;
-        Check(_vk.MapMemory(_device, _viewProjMemory, 0, 64, 0, &dst), "vkMapMemory(viewProj)");
-        _vk.UnmapMemory(_device, _viewProjMemory);
-
         Check(_vk.MapMemory(_device, _lightMemory, 0, (nuint)Marshal.SizeOf<LightData>(), 0, &dst), "vkMapMemory(light)");
         *(LightData*)dst = lights;
         _vk.UnmapMemory(_device, _lightMemory);
@@ -1553,9 +1561,11 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
         if (_headless)
             return;
 
-        if ((uint)Math.Max(1, (int)(SystemConfig.ResolutionWidth * SystemConfig.RenderScale)) != _sceneWidth ||
-            (uint)Math.Max(1, (int)(SystemConfig.ResolutionHeight * SystemConfig.RenderScale)) != _sceneHeight ||
-            (width > 1 && height > 1 && ((uint)width != _swapchainExtent.Width || (uint)height != _swapchainExtent.Height)))
+        uint requestedSceneWidth = Math.Max(1u, (uint)(SystemConfig.ResolutionWidth * SystemConfig.RenderScale));
+        uint requestedSceneHeight = Math.Max(1u, (uint)(SystemConfig.ResolutionHeight * SystemConfig.RenderScale));
+        if (requestedSceneWidth != _sceneWidth || requestedSceneHeight != _sceneHeight ||
+            (width > 1 && (int)width != _lastSwapchainRequestWidth) ||
+            (height > 1 && (int)height != _lastSwapchainRequestHeight))
         {
             RecreateSwapchain((int)Math.Max(1, width), (int)Math.Max(1, height));
         }
