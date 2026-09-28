@@ -88,7 +88,7 @@ public class GameEngine
                 _window = VeldridStartup.CreateWindow(ref windowCI);
             }
 
-            _renderer.Initialize(width, height, isHeadless);
+            _renderer.Initialize(width, height, isHeadless, _window?.SdlWindowHandle ?? nint.Zero);
             Console.WriteLine($"[INIT] Silnik gotowy. Architektura Modularna (CPU/GPU) Aktywna.");
         }
         catch (Exception ex)
