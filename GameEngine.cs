@@ -181,12 +181,12 @@ public class GameEngine
         Console.WriteLine($"--- [FUZZING ZAINICJOWANY: {iterations} CYKLI CPU (TRYB EKSTREMALNY - BEZ GRAFIKI)] ---");
         Stopwatch sw = Stopwatch.StartNew(); 
         
-        int logInterval = iterations / 10;
+        int logInterval = Math.Max(1, iterations / 10);
 
         for (int i = 0; i < iterations; i++)
         {
-            float corruptDelta = (float)((new Random().NextDouble() * 20.0) - 10.0);
-            InputSnapshot randomSnapshot = new FuzzSnapshot(new Random());
+            float corruptDelta = (float)((Random.Shared.NextDouble() * 20.0) - 10.0);
+            InputSnapshot randomSnapshot = new FuzzSnapshot(Random.Shared);
 
             ExecuteEnginePipeline(sw.Elapsed.TotalSeconds, corruptDelta, randomSnapshot);
             
@@ -288,7 +288,9 @@ public class GameEngine
 
         while (isHeadless || _window.Exists)
         {
-            double currentTime = stopwatch.Elapsed.TotalSeconds; float deltaTime = (float)(currentTime - lastTime); lastTime = currentTime;
+            double currentTime = stopwatch.Elapsed.TotalSeconds;
+            float deltaTime = Math.Clamp((float)(currentTime - lastTime), 0.0001f, 0.1f);
+            lastTime = currentTime;
             InputSnapshot snapshot = isHeadless ? null : _window.PumpEvents();
             if (!isHeadless && !_window.Exists) break;
 
