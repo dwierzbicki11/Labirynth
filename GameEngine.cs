@@ -10,6 +10,7 @@ using System.IO;
 using Veldrid;
 using Veldrid.Sdl2;
 using Veldrid.StartupUtilities;
+using Silk.NET.Core;
 using CyberEngine.Core;
 using CyberEngine.Graphics;
 using CyberEngine.Logic;
@@ -21,7 +22,7 @@ public class GameEngine
 {
     private Sdl2Window _window;
     private readonly World _world = new World();
-    private readonly VeldridRendererBackend _renderer = new VeldridRendererBackend();
+    private readonly IRendererBackend _renderer = CreateRendererBackend();
     private readonly System.Net.Sockets.UdpClient _telemetryClient = new System.Net.Sockets.UdpClient();
     
     private readonly byte[] _udpBuffer = new byte[256];
@@ -52,6 +53,16 @@ public class GameEngine
     public string TelemetryTargetIp { get; set; } = "127.0.0.1";
     
 
+    private static IRendererBackend CreateRendererBackend()
+    {
+        string selected = Environment.GetEnvironmentVariable("CYBERENGINE_RENDERER")?.Trim().ToLowerInvariant() ?? "veldrid";
+        return selected switch
+        {
+            "vulkan" or "silknetvulkan" => new SilkNetVulkanRendererBackend(),
+            _ => new VeldridRendererBackend()
+        };
+    }
+
     public void LoadScene(Scene scene) { _nextScene = scene; }
     public void RegisterLantern(Vector3 position) { _world.RegisterLantern(position); }
     public void DrawHorizontalPlane(float x, float y, float z, float w, float d, float m, float nx, float ny, float nz) => _world.DrawHorizontalPlane(x, y, z, w, d, m, nx, ny, nz);
@@ -78,7 +89,6 @@ public class GameEngine
             }
 
             _renderer.Initialize(width, height, isHeadless);
-            _renderer.AttachWindow(_window, width, height, backend);
             Console.WriteLine($"[INIT] Silnik gotowy. Architektura Modularna (CPU/GPU) Aktywna.");
         }
         catch (Exception ex)
@@ -312,7 +322,7 @@ public class GameEngine
             ExecuteEnginePipeline(currentTime, deltaTime, snapshot);
             SendUdpStats();
             
-            _renderer.DrawFrame(_world.Data, _window, Width, Height, ClearColor, isHeadless);
+            _renderer.Render(_world.Data, Width, Height, new Vector4(ClearColor.R, ClearColor.G, ClearColor.B, ClearColor.A));
             _world.TriggerMuzzleFlash = false;
 
             if (!SystemConfig.VSync && SystemConfig.FpsLimit > 0)
