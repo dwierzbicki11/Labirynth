@@ -206,7 +206,6 @@ public class GameEngine
         _currentScene?.OnUnload(this); 
         _renderer.Dispose();
         _telemetryClient.Close();
-        Environment.Exit(0);
     }
 
     private void RunBenchmark(int frameCount)
