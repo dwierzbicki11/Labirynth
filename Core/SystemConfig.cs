@@ -11,7 +11,7 @@ public static class SystemConfig
     // === PERFORMANCE ===
     public static bool VSync = false;
     // Keep Veldrid as the production default until the Silk.NET renderer is feature-complete.
-    public static RenderingBackend RenderingBackend = RenderingBackend.Veldrid;
+    public static RenderingBackend RenderingBackend = Graphics.RenderingBackend.Veldrid;
     public static int FpsLimit = 60;
     public static float RenderScale = 0.5f;
 
