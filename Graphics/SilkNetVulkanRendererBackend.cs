@@ -82,8 +82,8 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
     private Pipeline _hudPipeline;
 
     private CommandPool _commandPool;
-    private Semaphore _imageAvailable;
-    private Semaphore _renderFinished;
+    private Silk.NET.Vulkan.Semaphore _imageAvailable;
+    private Silk.NET.Vulkan.Semaphore _renderFinished;
     private Fence _inFlightFence;
 
     private nint _nativeWindow;
