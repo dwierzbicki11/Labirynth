@@ -423,7 +423,7 @@ public class GameScene : Scene
                 List<GameObject> obiektyChunku = new List<GameObject>();
                 bool[,] grid = GenerujSektorMatematyczny(coord.x, coord.z, chunkSize);
                 
-                Random popRng = new Random((coord.x * 73856) ^ (coord.z * 19274));
+                Random popRng = new Random(unchecked((coord.x * 73856) ^ (coord.z * 19274) ^ (_currentLevel * 1000003)));
 
                 for (int x = 0; x < chunkSize; x++)
                 {
@@ -476,7 +476,7 @@ public class GameScene : Scene
 
     private void SpawnStalkers(int count)
     {
-        Random rng = new Random();
+        Random rng = new Random(unchecked(0x51A7 + (_currentLevel * 7919)));
         int spawned = 0;
         
         while (spawned < count)
@@ -500,7 +500,7 @@ public class GameScene : Scene
         bool[,] grid = new bool[size, size];
         for (int x = 0; x < size; x++) for (int z = 0; z < size; z++) grid[x, z] = true;
         
-        int seed = (int)(DateTime.Now.Ticks % int.MaxValue) ^ (cx * 12345) ^ (cz * 67890);
+        int seed = unchecked(((_currentLevel * 1000003) ^ (cx * 12345) ^ (cz * 67890)));
         Random rng = new Random(seed);
         
         Stack<(int x, int z)> stack = new Stack<(int, int)>();
