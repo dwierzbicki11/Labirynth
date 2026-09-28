@@ -18,7 +18,8 @@ public sealed class VeldridRendererBackend : IRendererBackend
 
     public string BackendName => "Veldrid";
     public string DeviceName => _renderer.Device?.DeviceName ?? (_headless ? "Headless GPU" : "Unknown");
-    public bool IsInitialized { get; private set; }\n    public GraphicsDevice? Device => _renderer.Device;
+    public bool IsInitialized { get; private set; }
+    public GraphicsDevice? Device => _renderer.Device;
 
     public void Initialize(int width, int height, bool headless)
     {
