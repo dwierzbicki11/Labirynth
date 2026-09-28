@@ -48,7 +48,7 @@ public class GameEngine
     public float Width => SystemConfig.ResolutionWidth;
     public float Height => SystemConfig.ResolutionHeight;
     public RgbaFloat ClearColor { get; set; } = RgbaFloat.Black;
-    public string GpuName => _renderer.Device?.DeviceName ?? "Headless GPU";
+    public string GpuName => _renderer.DeviceName;
     public string TelemetryTargetIp { get; set; } = "127.0.0.1";
     
 
@@ -77,6 +77,7 @@ public class GameEngine
                 _window = VeldridStartup.CreateWindow(ref windowCI);
             }
 
+            _renderer.Initialize(width, height, isHeadless);
             _renderer.AttachWindow(_window, width, height, backend);
             Console.WriteLine($"[INIT] Silnik gotowy. Architektura Modularna (CPU/GPU) Aktywna.");
         }
@@ -231,7 +232,7 @@ public class GameEngine
 
             float simTime = i * fixedDelta;
             ExecuteEnginePipeline(simTime, fixedDelta, snapshot);
-            _renderer.DrawFrame(_world.Data, _window, Width, Height, ClearColor, isHeadless);
+            _renderer.Render(_world.Data, Width, Height, new Vector4(ClearColor.R, ClearColor.G, ClearColor.B, ClearColor.A));
 
             if (i > 0 && i % logInterval == 0)
             {
