@@ -13,6 +13,10 @@
     <PackageReference Include="Veldrid" Version="4.9.0" />
     <PackageReference Include="Veldrid.SPIRV" Version="1.0.15" />
     <PackageReference Include="Veldrid.StartupUtilities" Version="4.9.0" />
+    <!-- Silk.NET backend preparation: kept alongside Veldrid until the backend is feature-complete. -->
+    <PackageReference Include="Silk.NET.OpenGL" Version="2.23.0" />
+    <PackageReference Include="Silk.NET.Windowing" Version="2.23.0" />
+    <PackageReference Include="Silk.NET.SDL" Version="2.23.0" />
   </ItemGroup>
 
   <PropertyGroup>
