@@ -92,6 +92,8 @@ public class GameEngine
             }
 
             _renderer.Initialize(width, height, isHeadless, _window?.SdlWindowHandle ?? nint.Zero);
+            if (_renderer is VeldridRendererBackend veldrid)
+                veldrid.AttachWindow(_window, width, height, backend);
             Console.WriteLine($"[INIT] Silnik gotowy. Architektura Modularna (CPU/GPU) Aktywna.");
         }
         catch (Exception ex)
