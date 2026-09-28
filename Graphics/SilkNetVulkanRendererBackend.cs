@@ -32,6 +32,14 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
     private Image[] _swapchainImages = Array.Empty<Image>();
     private Format _swapchainFormat;
     private Extent2D _swapchainExtent;
+    private ImageView[] _swapchainImageViews = Array.Empty<ImageView>();
+    private RenderPass _renderPass;
+    private Framebuffer[] _framebuffers = Array.Empty<Framebuffer>();
+    private CommandPool _commandPool;
+    private CommandBuffer[] _commandBuffers = Array.Empty<CommandBuffer>();
+    private Semaphore _imageAvailable;
+    private Semaphore _renderFinished;
+    private Fence _inFlightFence;
     private nint _nativeWindow;
     private bool _headless;
 
@@ -151,6 +159,8 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
             if (!_vk.TryGetDeviceExtension(_instance, _device, out _swapchainApi))
                 throw new PlatformNotSupportedException("VK_KHR_swapchain is unavailable.");
             CreateSwapchain(width, height);
+            CreateRenderTargets();
+            CreateCommandResources();
             IsInitialized = true;
         }
         finally
@@ -190,6 +200,129 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
         _swapchainFormat = chosen.Format; _swapchainExtent = extent;
     }
 
+    private void CreateRenderTargets()
+    {
+        _swapchainImageViews = new ImageView[_swapchainImages.Length];
+        for (int i = 0; i < _swapchainImages.Length; i++)
+        {
+            ImageViewCreateInfo viewInfo = new()
+            {
+                SType = StructureType.ImageViewCreateInfo,
+                Image = _swapchainImages[i],
+                ViewType = ImageViewType.Type2D,
+                Format = _swapchainFormat,
+                Components = new ComponentMapping(ComponentSwizzle.Identity, ComponentSwizzle.Identity, ComponentSwizzle.Identity, ComponentSwizzle.Identity),
+                SubresourceRange = new ImageSubresourceRange(ImageAspectFlags.ColorBit, 0, 1, 0, 1)
+            };
+            Check(_vk!.CreateImageView(_device, in viewInfo, null, out _swapchainImageViews[i]), "vkCreateImageView");
+        }
+
+        AttachmentDescription color = new()
+        {
+            Format = _swapchainFormat,
+            Samples = SampleCountFlags.Count1Bit,
+            LoadOp = AttachmentLoadOp.Clear,
+            StoreOp = AttachmentStoreOp.Store,
+            InitialLayout = ImageLayout.Undefined,
+            FinalLayout = ImageLayout.PresentSrcKhr
+        };
+        AttachmentReference colorRef = new(0, ImageLayout.ColorAttachmentOptimal);
+        SubpassDescription subpass = new()
+        {
+            PipelineBindPoint = PipelineBindPoint.Graphics,
+            ColorAttachmentCount = 1
+        };
+        AttachmentReference* colorPtr = stackalloc AttachmentReference[1];
+        colorPtr[0] = colorRef;
+        subpass.PColorAttachments = colorPtr;
+        RenderPassCreateInfo rpInfo = new()
+        {
+            SType = StructureType.RenderPassCreateInfo,
+            AttachmentCount = 1
+        };
+        AttachmentDescription* attachmentPtr = stackalloc AttachmentDescription[1];
+        attachmentPtr[0] = color;
+        rpInfo.PAttachments = attachmentPtr;
+        SubpassDescription* subpassPtr = stackalloc SubpassDescription[1];
+        subpassPtr[0] = subpass;
+        rpInfo.PSubpasses = subpassPtr;
+        Check(_vk.CreateRenderPass(_device, in rpInfo, null, out _renderPass), "vkCreateRenderPass");
+
+        _framebuffers = new Framebuffer[_swapchainImageViews.Length];
+        for (int i = 0; i < _framebuffers.Length; i++)
+        {
+            ImageView* attachments = stackalloc ImageView[1];
+            attachments[0] = _swapchainImageViews[i];
+            FramebufferCreateInfo fbInfo = new()
+            {
+                SType = StructureType.FramebufferCreateInfo,
+                RenderPass = _renderPass,
+                AttachmentCount = 1,
+                PAttachments = attachments,
+                Width = _swapchainExtent.Width,
+                Height = _swapchainExtent.Height,
+                Layers = 1
+            };
+            Check(_vk.CreateFramebuffer(_device, in fbInfo, null, out _framebuffers[i]), "vkCreateFramebuffer");
+        }
+    }
+
+    private void CreateCommandResources()
+    {
+        CommandPoolCreateInfo poolInfo = new()
+        {
+            SType = StructureType.CommandPoolCreateInfo,
+            Flags = CommandPoolCreateFlags.ResetCommandBufferBit,
+            QueueFamilyIndex = _graphicsQueueFamily
+        };
+        Check(_vk!.CreateCommandPool(_device, in poolInfo, null, out _commandPool), "vkCreateCommandPool");
+
+        _commandBuffers = new CommandBuffer[_framebuffers.Length];
+        fixed (CommandBuffer* p = _commandBuffers)
+        {
+            CommandBufferAllocateInfo alloc = new()
+            {
+                SType = StructureType.CommandBufferAllocateInfo,
+                CommandPool = _commandPool,
+                Level = CommandBufferLevel.Primary,
+                CommandBufferCount = (uint)_commandBuffers.Length
+            };
+            Check(_vk.AllocateCommandBuffers(_device, in alloc, p), "vkAllocateCommandBuffers");
+        }
+
+        SemaphoreCreateInfo semaphoreInfo = new() { SType = StructureType.SemaphoreCreateInfo };
+        Check(_vk.CreateSemaphore(_device, in semaphoreInfo, null, out _imageAvailable), "vkCreateSemaphore");
+        Check(_vk.CreateSemaphore(_device, in semaphoreInfo, null, out _renderFinished), "vkCreateSemaphore");
+
+        FenceCreateInfo fenceInfo = new() { SType = StructureType.FenceCreateInfo, Flags = FenceCreateFlags.SignaledBit };
+        Check(_vk.CreateFence(_device, in fenceInfo, null, out _inFlightFence), "vkCreateFence");
+    }
+
+    private void RecordClearCommand(uint imageIndex, Vector4 clearColor)
+    {
+        CommandBuffer cmd = _commandBuffers[imageIndex];
+        Check(_vk!.ResetCommandBuffer(cmd, 0), "vkResetCommandBuffer");
+        CommandBufferBeginInfo begin = new() { SType = StructureType.CommandBufferBeginInfo };
+        Check(_vk.BeginCommandBuffer(cmd, in begin), "vkBeginCommandBuffer");
+
+        ClearValue clear = new();
+        clear.Color = new ClearColorValue(clearColor.X, clearColor.Y, clearColor.Z, clearColor.W);
+        RenderPassBeginInfo rp = new()
+        {
+            SType = StructureType.RenderPassBeginInfo,
+            RenderPass = _renderPass,
+            Framebuffer = _framebuffers[imageIndex],
+            RenderArea = new Rect2D(new Offset2D(0, 0), _swapchainExtent),
+            ClearValueCount = 1
+        };
+        ClearValue* clearPtr = stackalloc ClearValue[1];
+        clearPtr[0] = clear;
+        rp.PClearValues = clearPtr;
+        _vk.CmdBeginRenderPass(cmd, in rp, SubpassContents.Inline);
+        _vk.CmdEndRenderPass(cmd);
+        Check(_vk.EndCommandBuffer(cmd), "vkEndCommandBuffer");
+    }
+
     public void Render(RenderData data, float width, float height, Vector4 clearColor)
     {
         if (!IsInitialized)
@@ -199,7 +332,42 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
             throw new ArgumentNullException(nameof(data));
 
         if (_headless) return;
-        throw new PlatformNotSupportedException("Silk.NET Vulkan swapchain is ready; command buffers/render pass are the next stage.");
+        Check(_vk!.WaitForFences(_device, 1, in _inFlightFence, true, ulong.MaxValue), "vkWaitForFences");
+        Check(_vk.ResetFences(_device, 1, in _inFlightFence), "vkResetFences");
+
+        uint imageIndex = 0;
+        Result acquire = _swapchainApi!.AcquireNextImage(_device, _swapchain, ulong.MaxValue, _imageAvailable, default, &imageIndex);
+        if (acquire != Result.Success && acquire != Result.SuboptimalKhr)
+            Check(acquire, "vkAcquireNextImageKHR");
+
+        RecordClearCommand(imageIndex, clearColor);
+
+        PipelineStageFlags waitStage = PipelineStageFlags.ColorAttachmentOutputBit;
+        SubmitInfo submit = new()
+        {
+            SType = StructureType.SubmitInfo,
+            WaitSemaphoreCount = 1,
+            PWaitSemaphores = &_imageAvailable,
+            PWaitDstStageMask = &waitStage,
+            CommandBufferCount = 1,
+            PCommandBuffers = &_commandBuffers[imageIndex],
+            SignalSemaphoreCount = 1,
+            PSignalSemaphores = &_renderFinished
+        };
+        Check(_vk.QueueSubmit(_graphicsQueue, 1, in submit, _inFlightFence), "vkQueueSubmit");
+
+        PresentInfoKHR present = new()
+        {
+            SType = StructureType.PresentInfoKhr,
+            WaitSemaphoreCount = 1,
+            PWaitSemaphores = &_renderFinished,
+            SwapchainCount = 1,
+            PSwapchains = &_swapchain,
+            PImageIndices = &imageIndex
+        };
+        Result presentResult = _swapchainApi.QueuePresent(_graphicsQueue, in present);
+        if (presentResult != Result.Success && presentResult != Result.SuboptimalKhr)
+            Check(presentResult, "vkQueuePresentKHR");
     }
 
     private void Check(Result result, string operation)
@@ -216,6 +384,13 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
         if (_device.Handle != 0)
         {
             _vk.DeviceWaitIdle(_device);
+            if (_inFlightFence.Handle != 0) _vk.DestroyFence(_device, _inFlightFence, null);
+            if (_renderFinished.Handle != 0) _vk.DestroySemaphore(_device, _renderFinished, null);
+            if (_imageAvailable.Handle != 0) _vk.DestroySemaphore(_device, _imageAvailable, null);
+            if (_commandPool.Handle != 0) _vk.DestroyCommandPool(_device, _commandPool, null);
+            foreach (var framebuffer in _framebuffers) if (framebuffer.Handle != 0) _vk.DestroyFramebuffer(_device, framebuffer, null);
+            if (_renderPass.Handle != 0) _vk.DestroyRenderPass(_device, _renderPass, null);
+            foreach (var view in _swapchainImageViews) if (view.Handle != 0) _vk.DestroyImageView(_device, view, null);
             if (_swapchain.Handle != 0 && _swapchainApi is not null) _swapchainApi.DestroySwapchain(_device, _swapchain, null);
             _swapchain = default;
             _vk.DestroyDevice(_device, null);
@@ -243,6 +418,14 @@ public sealed unsafe class SilkNetVulkanRendererBackend : IRendererBackend
         _graphicsQueue = default;
         _graphicsQueueFamily = 0;
         _swapchainImages = Array.Empty<Image>();
+        _swapchainImageViews = Array.Empty<ImageView>();
+        _framebuffers = Array.Empty<Framebuffer>();
+        _commandBuffers = Array.Empty<CommandBuffer>();
+        _commandPool = default;
+        _renderPass = default;
+        _imageAvailable = default;
+        _renderFinished = default;
+        _inFlightFence = default;
         _sdl = null;
         _surfaceApi = null;
         _swapchainApi = null;
