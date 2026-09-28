@@ -85,7 +85,10 @@ public class GameEngine
             if (!isHeadless)
             {
                 WindowCreateInfo windowCI = new WindowCreateInfo { X = 0, Y = 0, WindowWidth = width, WindowHeight = height, WindowTitle = title, WindowInitialState = WindowState.FullScreen };
-                _window = VeldridStartup.CreateWindow(ref windowCI);
+                if (_renderer is SilkNetVulkanRendererBackend)
+                    _window = new Sdl2Window(title, 0, 0, width, height, SDL_WindowFlags.Vulkan | SDL_WindowFlags.Fullscreen, false);
+                else
+                    _window = VeldridStartup.CreateWindow(ref windowCI);
             }
 
             _renderer.Initialize(width, height, isHeadless, _window?.SdlWindowHandle ?? nint.Zero);
