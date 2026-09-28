@@ -1,4 +1,3 @@
-using System;
 using System.Linq;
 using Veldrid;
 using CyberEngine.Core;
@@ -31,7 +30,7 @@ public class MainMenuScene : Scene
                     {
                         if (_selectedIndex == 0) engine.LoadScene(new GameScene());
                         else if (_selectedIndex == 1) engine.LoadScene(new SettingsScene());
-                        else if (_selectedIndex == 2) Environment.Exit(0);
+                        else if (_selectedIndex == 2) engine.RequestExit();
                     }
                 }
             }
