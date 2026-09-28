@@ -35,7 +35,8 @@ public class Stalker : GameObject
 
     public override void Update(double deltaTime)
     {
-        _animationTimer += (float)deltaTime;
+        float dt = Math.Clamp((float)deltaTime, 0.0001f, 0.1f);
+        _animationTimer += dt;
 
         if (Target == null || Target.IsDestroyed) return;
 
@@ -44,9 +45,9 @@ public class Stalker : GameObject
         bool canHear = CanHearTarget(dist);
         
         // Logika czujności (słyszenie zwiększa alert)
-        if (canSee) Alertness += (float)deltaTime * 1.5f;
-        else if (canHear) Alertness += (float)deltaTime * 0.8f;
-        else Alertness -= (float)deltaTime * 0.4f;
+        if (canSee) Alertness += dt * 1.5f;
+        else if (canHear) Alertness += dt * 0.8f;
+        else Alertness -= dt * 0.4f;
         Alertness = Math.Clamp(Alertness, 0.0f, 1.0f);
 
         // 2. FSM - Logika stanów
